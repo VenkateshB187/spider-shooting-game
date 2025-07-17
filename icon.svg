@@ -1,0 +1,8 @@
+<svg width="192" height="192" xmlns="http://www.w3.org/2000/svg">
+  <rect width="192" height="192" fill="#001122"/>
+  <circle cx="96" cy="96" r="80" fill="#003366"/>
+  <circle cx="96" cy="96" r="60" fill="#444"/>
+  <text x="96" y="110" font-family="Arial, sans-serif" font-size="24" fill="#fff" text-anchor="middle">🕷️🎯</text>
+  <text x="96" y="140" font-family="Arial, sans-serif" font-size="16" fill="#fff" text-anchor="middle">SPIDER</text>
+  <text x="96" y="160" font-family="Arial, sans-serif" font-size="16" fill="#fff" text-anchor="middle">SHOOT</text>
+</svg>

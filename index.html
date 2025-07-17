@@ -2,17 +2,49 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Spider Shooting Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Spider Shoot">
+    <meta name="theme-color" content="#001122">
+    <title>Spider Hunt</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- Prevent zoom on double tap -->
+    <style>
+        * {
+            touch-action: manipulation;
+        }
+    </style>
 </head>
 <body>
-    <h1>Spider Shooting Game</h1>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="gameContainer">
+        <h1>Spider Hunt</h1>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <!-- Mobile Touch Controls -->
+        <div id="mobileControls" class="mobile-controls">
+            <div class="control-left">
+                <button id="leftBtn" class="control-btn">←</button>
+                <button id="rightBtn" class="control-btn">→</button>
+            </div>
+            <div class="control-right">
+                <button id="shootBtn" class="control-btn shoot-btn">SHOOT</button>
+                <button id="pauseBtn" class="control-btn pause-btn">⏸️</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Sound effects -->
     <audio id="shootSound" src="shoot.wav" preload="auto"></audio>
     <audio id="breakSound" src="smash.wav" preload="auto"></audio>
+    <audio id="backgroundMusic" src="forestbirds-2-367580.mp3" preload="auto" loop></audio>
+    <audio id="gameOverSound" src="game-over.mp3" preload="auto"></audio>
+    <audio id="loseLifeSound" src="lose-life.mp3" preload="auto"></audio>
+    <audio id="jumpSound" src="jump-up.mp3" preload="auto"></audio>
+    <audio id="enterSound" src="enter.mp3" preload="auto"></audio>
 
     <script src="game.js"></script>
 </body>

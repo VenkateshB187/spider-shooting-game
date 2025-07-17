@@ -1,0 +1,13 @@
+{
+  "name": "Spider Shooting Game",
+  "short_name": "SpiderShoot",
+  "description": "A thrilling spider shooting game with 10 levels of increasing difficulty",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "theme_color": "#001122",
+  "background_color": "#003366",
+  "icons": [],
+  "categories": ["games", "entertainment"],
+  "lang": "en"
+}
