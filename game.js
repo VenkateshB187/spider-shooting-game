@@ -2205,17 +2205,51 @@ function checkCollisions() {
         }
     });
     
-    // Player vs ground spiders (lose life)
+    // Player vs ground spiders (lose life) - Rectangle-Circle collision detection
     groundSpiders.forEach((spider, sIdx) => {
-        if (
-            playerX < spider.x + SPIDER_RADIUS &&
-            playerX + PLAYER_WIDTH > spider.x - SPIDER_RADIUS &&
-            playerY < spider.y + SPIDER_RADIUS &&
-            playerY + PLAYER_HEIGHT > spider.y - SPIDER_RADIUS
-        ) {
-            console.log('Ground spider touched player!');
+        console.log('Checking ground spider collision:', {
+            playerX, playerY, playerWidth: PLAYER_WIDTH, playerHeight: PLAYER_HEIGHT,
+            spiderX: spider.x, spiderY: spider.y, spiderRadius: SPIDER_RADIUS
+        });
+        
+        // Find the closest point on the rectangle (player) to the center of the circle (spider)
+        const closestX = Math.max(playerX, Math.min(spider.x, playerX + PLAYER_WIDTH));
+        const closestY = Math.max(playerY, Math.min(spider.y, playerY + PLAYER_HEIGHT));
+        
+        // Calculate the distance between the circle's center and this closest point
+        const dx = spider.x - closestX;
+        const dy = spider.y - closestY;
+        const distanceSquared = dx * dx + dy * dy;
+        
+        // Check if the distance is within the spider's radius (collision)
+        if (distanceSquared <= SPIDER_RADIUS * SPIDER_RADIUS) {
+            console.log('Ground spider touched player! Distance:', Math.sqrt(distanceSquared), 'Radius:', SPIDER_RADIUS);
             loseLife();
             groundSpiders.splice(sIdx, 1); // Remove the spider that caught player
+        }
+    });
+    
+    // Player vs hanging spiders (lose life) - Rectangle-Circle collision detection
+    spiders.forEach((spider, sIdx) => {
+        console.log('Checking hanging spider collision:', {
+            playerX, playerY, playerWidth: PLAYER_WIDTH, playerHeight: PLAYER_HEIGHT,
+            spiderX: spider.x, spiderY: spider.y, spiderRadius: SPIDER_RADIUS
+        });
+        
+        // Find the closest point on the rectangle (player) to the center of the circle (spider)
+        const closestX = Math.max(playerX, Math.min(spider.x, playerX + PLAYER_WIDTH));
+        const closestY = Math.max(playerY, Math.min(spider.y, playerY + PLAYER_HEIGHT));
+        
+        // Calculate the distance between the circle's center and this closest point
+        const dx = spider.x - closestX;
+        const dy = spider.y - closestY;
+        const distanceSquared = dx * dx + dy * dy;
+        
+        // Check if the distance is within the spider's radius (collision)
+        if (distanceSquared <= SPIDER_RADIUS * SPIDER_RADIUS) {
+            console.log('Hanging spider touched player! Distance:', Math.sqrt(distanceSquared), 'Radius:', SPIDER_RADIUS);
+            loseLife();
+            spiders.splice(sIdx, 1); // Remove the spider that caught player
         }
     });
 }
