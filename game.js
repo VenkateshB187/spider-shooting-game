@@ -1,6 +1,10 @@
 // ...game constants...
+// Game constants
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+
+// Information bar at the top
+const INFO_BAR_HEIGHT = 40;
 
 // Mobile detection and canvas scaling
 const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -55,6 +59,7 @@ const SPIDER_BULLET_HEIGHT = 8;
 const SPIDER_BULLET_SPEED = 3;
 let spiderBullets = [];
 let horizontalBullets = []; // For horizontal shooting
+let diagonalBullets = []; // For diagonal shooting (W and S keys)
 
 let playerX = canvas.width / 2 - PLAYER_WIDTH / 2;
 let playerY = PLAYER_Y; // Add playerY variable for jumping
@@ -67,6 +72,10 @@ const GROUND_Y = PLAYER_Y; // Ground level
 let leftPressed = false;
 let rightPressed = false;
 let shootPressed = false;
+let shootLeftUpPressed = false; // W key for left up shooting
+let shootLeftDownPressed = false; // S key for left down shooting
+let shootLeftPressed = false; // A key for horizontal left shooting
+let shootRightPressed = false; // D key for horizontal right shooting
 let bullets = [];
 let spiders = [];
 let score = 0;
@@ -100,6 +109,11 @@ let maxLives = 5;
 let levelScore = 0;
 let scoreToNextLevel = 100; // Score needed to advance to next level
 
+// Spider count per level - Reduced for better accessibility for kids and older players
+const spidersPerLevel = [5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30]; // Extended for higher levels
+let spidersSpawnedThisLevel = 0;
+let spidersDefeatedThisLevel = 0;
+
 // Splash screen - simplified without speed controls
 let selectedOption = 'start'; // Only start option now
 
@@ -111,6 +125,10 @@ const gameOverSound = document.getElementById('gameOverSound');
 const loseLifeSound = document.getElementById('loseLifeSound');
 const jumpSound = document.getElementById('jumpSound');
 const enterSound = document.getElementById('enterSound');
+const pauseSound = document.getElementById('pauseSound');
+const resumeSound = document.getElementById('resumeSound');
+const footstepSound = document.getElementById('footstepSound');
+const blastSound = document.getElementById('blastSound');
 
 // Debug sound initialization
 console.log('Sound elements loaded:');
@@ -121,6 +139,10 @@ console.log('gameOverSound:', !!gameOverSound);
 console.log('loseLifeSound:', !!loseLifeSound);
 console.log('jumpSound:', !!jumpSound);
 console.log('enterSound:', !!enterSound);
+console.log('pauseSound:', !!pauseSound);
+console.log('resumeSound:', !!resumeSound);
+console.log('footstepSound:', !!footstepSound);
+console.log('blastSound:', !!blastSound);
 
 // Set default volumes for better audio experience
 if (shootSound) shootSound.volume = 0.6;
@@ -129,6 +151,10 @@ if (gameOverSound) gameOverSound.volume = 0.8;
 if (loseLifeSound) loseLifeSound.volume = 0.8;
 if (jumpSound) jumpSound.volume = 0.5;
 if (enterSound) enterSound.volume = 0.7;
+if (pauseSound) pauseSound.volume = 0.7;
+if (resumeSound) resumeSound.volume = 0.7;
+if (footstepSound) footstepSound.volume = 0.3; // Quiet footsteps
+if (blastSound) blastSound.volume = 0.8;
 
 const spiderImg = new Image();
 spiderImg.src = 'spider.png'; // Place your real spider image in the project folder
@@ -143,11 +169,146 @@ const SPIDER_BODY_COLOR = '#1a0a00';
 const SPIDER_LEG_COLOR = '#2d1a0d';
 const SPIDER_HIGHLIGHT_COLOR = '#4a2c1a';
 
-const personImg = new Image();
-personImg.src = 'person.png'; // Place your real person image in the project folder
+// Player visual settings for procedural animation
+const PLAYER_COLORS = {
+    head: '#FFD1A9',      // Skin tone
+    body: '#4169E1',      // Blue shirt
+    legs: '#2F4F4F',      // Dark pants
+    shoes: '#8B4513',     // Brown shoes
+    hair: '#8B4513',      // Brown hair
+    outline: '#000000',   // Black outline
+    gun: '#2F2F2F',       // Dark gun metal
+    gunBarrel: '#1A1A1A'  // Gun barrel
+};
+
+// Advanced animation settings
+const ANIMATION_SETTINGS = {
+    runCycleDuration: 320,    // Complete run cycle in ms
+    bobIntensity: 3,          // Vertical bob amount
+    armSwingAngle: 25,        // Arm swing in degrees
+    legSwingAngle: 35,        // Leg swing in degrees
+    headBobAmount: 1.5,       // Head movement during run
+    jumpSquash: 0.8,          // Squash factor when landing
+    shootRecoil: 2            // Recoil distance when shooting
+};
+
+// Power-up system
+const POWER_UPS = {
+    MACHINE_GUN: { 
+        name: 'Machine Gun', 
+        color: '#FF6B35', 
+        duration: 10000, // 10 seconds
+        fireRate: 50     // ms between shots
+    },
+    BLAST_POWER: { 
+        name: 'Blast Power', 
+        color: '#FF1744', 
+        duration: 8000,  // 8 seconds
+        explosionRadius: 20  // 20-pixel radius as requested
+    },
+    FREEZE_TIME: { 
+        name: 'Freeze Time', 
+        color: '#00E5FF', 
+        duration: 5000   // 5 seconds
+    },
+    MULTI_SHOT: { 
+        name: 'Multi-Shot', 
+        color: '#FFD600', 
+        duration: 12000, // 12 seconds
+        shots: 3         // 3 bullets per shot
+    }
+};
+
+// Power-up state
+let activePowerUps = [];
+let powerUpSpawns = [];
+let lastPowerUpSpawn = 0;
+let machineGunTimer = 0;
+let lastHorizontalShot = 0; // Add cooldown for horizontal shooting
 
 // Animation time variable for menu effects
 let menuAnimationTime = 0;
+
+// Player animation variables for realistic running effect
+let playerAnimationTime = 0;
+let isPlayerMoving = false;
+let playerDirection = 0; // -1 for left, 1 for right, 0 for stationary
+let lastPlayerX = 0;
+let footstepTimer = 0;
+
+// Function to draw information bar at the top
+function drawInfoBar() {
+    if (showSplash || gameOver) return; // Don't show info bar on splash or game over screens
+    
+    // Draw black background bar
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(0, 0, canvas.width, INFO_BAR_HEIGHT);
+    
+    // Add border at bottom of info bar
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fillRect(0, INFO_BAR_HEIGHT - 1, canvas.width, 1);
+    
+    // Set up text properties
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    
+    const centerY = INFO_BAR_HEIGHT / 2;
+    const leftMargin = 10;
+    let currentX = leftMargin;
+    
+    // Level information with icon
+    ctx.fillStyle = '#00ff88';
+    ctx.fillText('📊', currentX, centerY);
+    currentX += 25;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`Level ${currentLevel}`, currentX, centerY);
+    currentX += 80;
+    
+    // Spider progress with icon
+    const maxSpiders = spidersPerLevel[Math.min(currentLevel - 1, spidersPerLevel.length - 1)];
+    ctx.fillStyle = '#ff6600';
+    ctx.fillText('🕷️', currentX, centerY);
+    currentX += 25;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${spidersDefeatedThisLevel}/${maxSpiders}`, currentX, centerY);
+    currentX += 80;
+    
+    // Lives with heart icons
+    ctx.fillStyle = '#ff0000';
+    ctx.fillText('❤️', currentX, centerY);
+    currentX += 25;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`x${lives}`, currentX, centerY);
+    currentX += 50;
+    
+    // Score with icon
+    ctx.fillStyle = '#ffff00';
+    ctx.fillText('⭐', currentX, centerY);
+    currentX += 25;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${score}`, currentX, centerY);
+    
+    // Right side - Timer
+    ctx.textAlign = 'right';
+    const minutes = Math.floor(gameTime / 60);
+    const seconds = Math.floor(gameTime % 60);
+    const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    
+    ctx.fillStyle = '#00ccff';
+    ctx.fillText('⏱️', canvas.width - 60, centerY);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(timeString, canvas.width - 10, centerY);
+    
+    // Pause indicator if game is paused
+    if (gamePaused) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffff00';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText('⏸️ PAUSED', canvas.width / 2, centerY);
+    }
+}
 
 // Function to draw 3D text with various effects
 function draw3DText(text, x, y, size, style = 'default') {
@@ -359,17 +520,488 @@ function draw3DText(text, x, y, size, style = 'default') {
 
 // ...draw player...
 function drawPlayer() {
-    // Draw person image with fallback
-    if (personImg.complete && personImg.naturalWidth !== 0) {
-        ctx.drawImage(personImg, playerX, playerY - PLAYER_HEIGHT, PLAYER_WIDTH, PLAYER_HEIGHT * 2);
-    } else {
-        // Fallback: draw simple player shape
-        ctx.fillStyle = '#0f0';
-        ctx.fillRect(playerX + PLAYER_WIDTH / 4, playerY, PLAYER_WIDTH / 2, PLAYER_HEIGHT);
-        ctx.beginPath();
-        ctx.arc(playerX + PLAYER_WIDTH / 2, playerY - PLAYER_HEIGHT / 2, PLAYER_HEIGHT / 1.5, 0, Math.PI * 2);
-        ctx.fill();
+    // Update player animation only if not paused
+    if (!gamePaused) {
+        playerAnimationTime += 16; // Assuming 60fps
     }
+    
+    // Check if player is moving
+    const wasMoving = isPlayerMoving;
+    isPlayerMoving = (leftPressed || rightPressed) && !isJumping;
+    
+    // Determine direction
+    if (leftPressed && !rightPressed) {
+        playerDirection = -1;
+    } else if (rightPressed && !leftPressed) {
+        playerDirection = 1;
+    } else if (!isPlayerMoving) {
+        playerDirection = 0;
+    }
+    
+    // Footstep particles
+    if (isPlayerMoving && !isJumping) {
+        footstepTimer += 16;
+        if (footstepTimer > 200) { // Every 200ms
+            spawnFootstepParticles();
+            footstepTimer = 0;
+        }
+    }
+    
+    // Use enhanced procedural animation like spider animation
+    drawAnimatedPlayerFallback();
+}
+
+// Enhanced procedural character drawing function like spider animation
+function drawAnimatedPlayerFallback() {
+    const time = playerAnimationTime;
+    
+    // Calculate animation cycles
+    const runCycle = (time % ANIMATION_SETTINGS.runCycleDuration) / ANIMATION_SETTINGS.runCycleDuration;
+    const runPhase = runCycle * Math.PI * 2;
+    
+    // Base position with effects
+    let baseX = playerX + PLAYER_WIDTH / 2;
+    let baseY = playerY - PLAYER_HEIGHT;
+    
+    // Running bob effect
+    let bobOffset = 0;
+    if (isPlayerMoving && !isJumping) {
+        bobOffset = Math.sin(runPhase * 2) * ANIMATION_SETTINGS.bobIntensity;
+    }
+    
+    // Jump squash effect
+    let scaleY = 1;
+    if (isJumping) {
+        if (playerVelocityY > 5) {
+            scaleY = ANIMATION_SETTINGS.jumpSquash; // Squash on landing
+        } else if (playerVelocityY < -3) {
+            scaleY = 1.1; // Stretch when jumping up
+        }
+    }
+    
+    // Shooting recoil
+    let recoilOffset = 0;
+    if (shootPressed) {
+        recoilOffset = ANIMATION_SETTINGS.shootRecoil;
+    }
+    
+    ctx.save();
+    
+    // Apply global transformations
+    ctx.translate(baseX, baseY + bobOffset);
+    ctx.scale(playerDirection === -1 ? -1 : 1, scaleY);
+    
+    // Character proportions (relative to PLAYER_WIDTH/HEIGHT)
+    const headSize = PLAYER_WIDTH * 0.3;
+    const bodyWidth = PLAYER_WIDTH * 0.4;
+    const bodyHeight = PLAYER_HEIGHT * 0.6;
+    const armLength = PLAYER_HEIGHT * 0.4;
+    const legLength = PLAYER_HEIGHT * 0.5;
+    
+    // Head position with slight bob during running
+    let headBob = 0;
+    if (isPlayerMoving && !isJumping) {
+        headBob = Math.sin(runPhase * 2) * ANIMATION_SETTINGS.headBobAmount;
+    }
+    
+    // Draw head
+    ctx.fillStyle = PLAYER_COLORS.head;
+    ctx.strokeStyle = PLAYER_COLORS.outline;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, -PLAYER_HEIGHT * 0.8 + headBob, headSize, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    
+    // Draw hair
+    ctx.fillStyle = PLAYER_COLORS.hair;
+    ctx.beginPath();
+    ctx.arc(0, -PLAYER_HEIGHT * 0.85 + headBob, headSize * 0.9, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    
+    // Draw eyes
+    ctx.fillStyle = PLAYER_COLORS.outline;
+    ctx.beginPath();
+    ctx.arc(-headSize * 0.3, -PLAYER_HEIGHT * 0.8 + headBob, 2, 0, Math.PI * 2);
+    ctx.arc(headSize * 0.3, -PLAYER_HEIGHT * 0.8 + headBob, 2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Draw body
+    ctx.fillStyle = PLAYER_COLORS.body;
+    ctx.strokeStyle = PLAYER_COLORS.outline;
+    ctx.fillRect(-bodyWidth/2, -PLAYER_HEIGHT * 0.6, bodyWidth, bodyHeight);
+    ctx.strokeRect(-bodyWidth/2, -PLAYER_HEIGHT * 0.6, bodyWidth, bodyHeight);
+    
+    // Calculate arm positions and angles
+    let leftArmAngle = 0;
+    let rightArmAngle = 0;
+    
+    if (isPlayerMoving && !isJumping) {
+        // Running arm swing - opposite to legs
+        leftArmAngle = Math.sin(runPhase) * (ANIMATION_SETTINGS.armSwingAngle * Math.PI / 180);
+        rightArmAngle = -leftArmAngle;
+    } else if (shootPressed) {
+        // Shooting pose - one arm extended
+        rightArmAngle = -Math.PI / 4; // Extended arm
+        leftArmAngle = Math.PI / 6;   // Support arm
+    }
+    
+    // Draw arms
+    const armStartY = -PLAYER_HEIGHT * 0.5;
+    
+    // Left arm
+    ctx.save();
+    ctx.translate(-bodyWidth/2, armStartY);
+    ctx.rotate(leftArmAngle);
+    ctx.fillStyle = PLAYER_COLORS.head; // Skin color for arms
+    ctx.fillRect(-8, 0, 16, armLength);
+    ctx.strokeRect(-8, 0, 16, armLength);
+    ctx.restore();
+    
+    // Right arm (with recoil offset if shooting)
+    ctx.save();
+    ctx.translate(bodyWidth/2 - recoilOffset, armStartY);
+    ctx.rotate(rightArmAngle);
+    ctx.fillStyle = PLAYER_COLORS.head;
+    ctx.fillRect(-8, 0, 16, armLength);
+    ctx.strokeRect(-8, 0, 16, armLength);
+    
+    // Draw gun in right hand - positioned to point upward
+    ctx.save();
+    ctx.translate(0, armLength - 5); // Position at hand
+    ctx.rotate(-Math.PI / 2); // Rotate gun to point upward
+    
+    // Gun body
+    ctx.fillStyle = PLAYER_COLORS.gun;
+    ctx.fillRect(-6, -3, 16, 6);
+    ctx.strokeRect(-6, -3, 16, 6);
+    
+    // Gun barrel (nozzle)
+    ctx.fillStyle = PLAYER_COLORS.gunBarrel;
+    ctx.fillRect(10, -1, 10, 2);
+    ctx.strokeRect(10, -1, 10, 2);
+    
+    // Gun handle
+    ctx.fillRect(-6, 0, 4, 8);
+    ctx.strokeRect(-6, 0, 4, 8);
+    
+    // Muzzle flash when shooting - at the nozzle end
+    if (shootPressed) {
+        ctx.fillStyle = '#FFFF00';
+        ctx.strokeStyle = '#FFA500';
+        ctx.lineWidth = 1;
+        const flashSize = 3 + Math.random() * 2;
+        ctx.beginPath();
+        ctx.arc(20, 0, flashSize, 0, Math.PI * 2); // At nozzle end
+        ctx.fill();
+        ctx.stroke();
+        
+        // Add some spark particles at nozzle
+        for (let i = 0; i < 3; i++) {
+            ctx.fillStyle = '#FFAA00';
+            ctx.beginPath();
+            const sparkX = 20 + Math.random() * 8;
+            const sparkY = (Math.random() - 0.5) * 4;
+            ctx.arc(sparkX, sparkY, 1, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
+    ctx.restore();
+    ctx.restore();
+    
+    // Calculate leg positions and angles
+    let leftLegAngle = 0;
+    let rightLegAngle = 0;
+    
+    if (isPlayerMoving && !isJumping) {
+        // Running leg movement
+        leftLegAngle = Math.sin(runPhase) * (ANIMATION_SETTINGS.legSwingAngle * Math.PI / 180);
+        rightLegAngle = -leftLegAngle;
+    } else if (isJumping) {
+        // Jumping pose - legs slightly bent
+        leftLegAngle = Math.PI / 12;
+        rightLegAngle = Math.PI / 12;
+    }
+    
+    // Draw legs
+    const legStartY = -PLAYER_HEIGHT * 0.05;
+    
+    // Left leg
+    ctx.save();
+    ctx.translate(-bodyWidth/4, legStartY);
+    ctx.rotate(leftLegAngle);
+    ctx.fillStyle = PLAYER_COLORS.legs;
+    ctx.fillRect(-10, 0, 20, legLength);
+    ctx.strokeRect(-10, 0, 20, legLength);
+    
+    // Left shoe
+    ctx.fillStyle = PLAYER_COLORS.shoes;
+    ctx.fillRect(-12, legLength - 5, 24, 8);
+    ctx.strokeRect(-12, legLength - 5, 24, 8);
+    ctx.restore();
+    
+    // Right leg
+    ctx.save();
+    ctx.translate(bodyWidth/4, legStartY);
+    ctx.rotate(rightLegAngle);
+    ctx.fillStyle = PLAYER_COLORS.legs;
+    ctx.fillRect(-10, 0, 20, legLength);
+    ctx.strokeRect(-10, 0, 20, legLength);
+    
+    // Right shoe
+    ctx.fillStyle = PLAYER_COLORS.shoes;
+    ctx.fillRect(-12, legLength - 5, 24, 8);
+    ctx.strokeRect(-12, legLength - 5, 24, 8);
+    ctx.restore();
+    
+    ctx.restore();
+}
+
+// Function to spawn footstep particles
+function spawnFootstepParticles() {
+    if (!isPlayerMoving || isJumping) return;
+    
+    const footX = playerX + PLAYER_WIDTH / 2 + (Math.random() - 0.5) * PLAYER_WIDTH;
+    const footY = playerY + PLAYER_HEIGHT;
+    
+    // Play footstep sound (quietly and briefly)
+    if (footstepSound && gameRunning && !gamePaused) {
+        footstepSound.currentTime = 0;
+        footstepSound.volume = 0.1; // Very quiet
+        footstepSound.play().catch(e => console.log('Footstep sound failed to play:', e));
+    }
+    
+    // Create small dust particles
+    for (let i = 0; i < 3; i++) {
+        particles.push({
+            x: footX + (Math.random() - 0.5) * 10,
+            y: footY + Math.random() * 5,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -Math.random() * 1.5 - 0.5,
+            alpha: 0.6,
+            size: Math.random() * 2 + 1,
+            color: '#D2B48C', // Dust color
+            gravity: 0.05
+        });
+    }
+}
+
+// Power-up management functions
+function spawnPowerUp() {
+    if (gamePaused) return; // Stop spawning when paused
+    
+    const now = Date.now();
+    if (now - lastPowerUpSpawn < 15000) return; // Spawn every 15 seconds minimum
+    
+    const powerUpTypes = Object.keys(POWER_UPS);
+    const randomType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+    
+    // Spawn in more accessible locations
+    const spawnX = 100 + Math.random() * (canvas.width - 200); // Away from edges
+    const spawnY = 200 + Math.random() * (canvas.height - 350); // Mid-screen area
+    
+    powerUpSpawns.push({
+        type: randomType,
+        x: spawnX,
+        y: spawnY,
+        bobTime: 0,
+        collected: false,
+        spawnTime: now,
+        lifetime: 10000 // Power-up disappears after 10 seconds
+    });
+    
+    lastPowerUpSpawn = now;
+}
+
+function updatePowerUps() {
+    const now = Date.now();
+    
+    // Update active power-ups
+    activePowerUps = activePowerUps.filter(powerUp => {
+        powerUp.duration -= 16;
+        return powerUp.duration > 0;
+    });
+    
+    // Update power-up spawns (bobbing animation and lifetime)
+    powerUpSpawns = powerUpSpawns.filter(spawn => {
+        spawn.bobTime += 16;
+        
+        // Remove if expired (after 10 seconds)
+        if (now - spawn.spawnTime > spawn.lifetime) {
+            return false;
+        }
+        
+        return !spawn.collected;
+    });
+    
+    // Machine gun auto-fire
+    if (hasPowerUp('MACHINE_GUN') && shootPressed) {
+        machineGunTimer += 16;
+        if (machineGunTimer >= POWER_UPS.MACHINE_GUN.fireRate) {
+            shoot();
+            machineGunTimer = 0;
+        }
+    }
+}
+
+function collectPowerUp(type) {
+    // Remove existing power-up of same type
+    activePowerUps = activePowerUps.filter(powerUp => powerUp.type !== type);
+    
+    // Add new power-up
+    activePowerUps.push({
+        type: type,
+        duration: POWER_UPS[type].duration
+    });
+    
+    // Play collection sound with higher volume for better feedback
+    const powerUpSound = document.getElementById('powerUpSound');
+    if (powerUpSound) {
+        console.log('Playing power-up sound...');
+        powerUpSound.currentTime = 0;
+        powerUpSound.volume = 0.8; // Increased volume for better feedback
+        powerUpSound.play().catch(e => console.log('Power-up sound failed:', e));
+    } else {
+        console.log('Power-up sound element not found!');
+    }
+    
+    // Add score bonus for collecting power-up
+    score += 50;
+}
+
+function hasPowerUp(type) {
+    return activePowerUps.some(powerUp => powerUp.type === type);
+}
+
+function drawPowerUps() {
+    // Draw power-up spawns
+    powerUpSpawns.forEach(spawn => {
+        const now = Date.now();
+        const timeRemaining = spawn.lifetime - (now - spawn.spawnTime);
+        const bobOffset = Math.sin(spawn.bobTime / 200) * 5;
+        const pulseScale = 1 + Math.sin(spawn.bobTime / 150) * 0.2; // Pulsing effect
+        const powerUp = POWER_UPS[spawn.type];
+        
+        // Flash red when about to expire (last 3 seconds)
+        const isExpiring = timeRemaining < 3000;
+        const flashAlpha = isExpiring ? (Math.sin(spawn.bobTime / 100) * 0.5 + 0.5) : 1;
+        
+        ctx.save();
+        ctx.translate(spawn.x, spawn.y + bobOffset);
+        ctx.scale(pulseScale, pulseScale);
+        ctx.globalAlpha = flashAlpha;
+        
+        // Enhanced glowing effect
+        ctx.shadowColor = isExpiring ? '#FF0000' : powerUp.color;
+        ctx.shadowBlur = 15;
+        
+        // Draw targeting circle (visual indicator for shooting)
+        ctx.strokeStyle = isExpiring ? '#FF0000' : powerUp.color;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.4;
+        ctx.beginPath();
+        ctx.arc(0, 0, 25, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = flashAlpha;
+        
+        // Power-up icon
+        ctx.fillStyle = isExpiring ? '#FF4444' : powerUp.color;
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        
+        if (spawn.type === 'MACHINE_GUN') {
+            // Draw machine gun icon
+            ctx.fillRect(-12, -8, 24, 16);
+            ctx.strokeRect(-12, -8, 24, 16);
+            ctx.fillRect(12, -3, 10, 6);
+            ctx.strokeRect(12, -3, 10, 6);
+        } else if (spawn.type === 'BLAST_POWER') {
+            // Draw explosion icon
+            ctx.beginPath();
+            for (let i = 0; i < 8; i++) {
+                const angle = (i / 8) * Math.PI * 2;
+                const radius = i % 2 === 0 ? 14 : 7;
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        } else if (spawn.type === 'FREEZE_TIME') {
+            // Draw freeze icon
+            ctx.beginPath();
+            ctx.arc(0, 0, 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(-2, -10, 4, 20);
+            ctx.fillRect(-10, -2, 20, 4);
+        } else if (spawn.type === 'MULTI_SHOT') {
+            // Draw multi-shot icon
+            for (let i = 0; i < 3; i++) {
+                ctx.fillRect(-10 + i * 7, -12 + i * 4, 5, 14);
+                ctx.strokeRect(-10 + i * 7, -12 + i * 4, 5, 14);
+            }
+        }
+        
+        ctx.restore();
+        
+        // Draw label with better visibility
+        ctx.fillStyle = '#FFFFFF';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.globalAlpha = flashAlpha;
+        ctx.strokeText(powerUp.name, spawn.x, spawn.y + 35);
+        ctx.fillText(powerUp.name, spawn.x, spawn.y + 35);
+        
+        // Draw "SHOOT ME!" instruction
+        ctx.fillStyle = isExpiring ? '#FF0000' : '#FFFF00';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.font = 'bold 12px Arial';
+        const shootPulse = Math.sin(spawn.bobTime / 100) * 0.5 + 0.5;
+        ctx.globalAlpha = 0.7 + shootPulse * 0.3;
+        const instructionText = isExpiring ? 'HURRY!' : 'SHOOT ME!';
+        ctx.strokeText(instructionText, spawn.x, spawn.y + 50);
+        ctx.fillText(instructionText, spawn.x, spawn.y + 50);
+        
+        // Draw timer
+        const seconds = Math.ceil(timeRemaining / 1000);
+        ctx.fillStyle = isExpiring ? '#FF0000' : '#FFFFFF';
+        ctx.font = 'bold 10px Arial';
+        ctx.globalAlpha = 1;
+        ctx.fillText(`${seconds}s`, spawn.x, spawn.y + 65);
+        
+        ctx.globalAlpha = 1;
+    });
+}
+
+function drawPowerUpUI() {
+    // Draw active power-ups in UI
+    let yOffset = 120;
+    activePowerUps.forEach(powerUp => {
+        const info = POWER_UPS[powerUp.type];
+        const timeLeft = Math.ceil(powerUp.duration / 1000);
+        
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(10, yOffset, 200, 25);
+        
+        ctx.fillStyle = info.color;
+        ctx.fillRect(12, yOffset + 2, (powerUp.duration / info.duration) * 196, 21);
+        
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${info.name}: ${timeLeft}s`, 15, yOffset + 17);
+        
+        yOffset += 30;
+    });
 }
 
 // ...draw bullets...
@@ -406,6 +1038,35 @@ function drawBullets() {
         }
         ctx.closePath();
         ctx.fill();
+    });
+    
+    // Player diagonal bullets
+    ctx.fillStyle = '#f0f'; // Magenta color for diagonal bullets
+    diagonalBullets.forEach(bullet => {
+        // Draw diagonal bullet as star shape
+        ctx.save();
+        ctx.translate(bullet.x + HORIZONTAL_BULLET_WIDTH / 2, bullet.y + HORIZONTAL_BULLET_HEIGHT / 2);
+        
+        // Calculate rotation based on direction
+        let rotation = 0;
+        if (bullet.directionX < 0 && bullet.directionY < 0) rotation = -Math.PI/4; // left-up
+        if (bullet.directionX < 0 && bullet.directionY > 0) rotation = Math.PI/4; // left-down
+        
+        ctx.rotate(rotation);
+        
+        ctx.beginPath();
+        ctx.moveTo(0, -4); // top
+        ctx.lineTo(2, -1); // top-right
+        ctx.lineTo(4, 0); // right
+        ctx.lineTo(2, 1); // bottom-right
+        ctx.lineTo(0, 4); // bottom
+        ctx.lineTo(-2, 1); // bottom-left
+        ctx.lineTo(-4, 0); // left
+        ctx.lineTo(-2, -1); // top-left
+        ctx.closePath();
+        ctx.fill();
+        
+        ctx.restore();
     });
     
     // Spider bullets
@@ -614,8 +1275,10 @@ function drawRealisticSpider(x, y, size, animationOffset = 0) {
     ctx.stroke();
 }
 function drawSpiders() {
-    // Update spider animation time
-    spiderAnimationTime += 16; // Assuming 60fps, so ~16ms per frame
+    // Update spider animation time only if not paused
+    if (!gamePaused) {
+        spiderAnimationTime += 16; // Assuming 60fps, so ~16ms per frame
+    }
     
     // Draw hanging spiders
     spiders.forEach((spider, index) => {
@@ -649,8 +1312,8 @@ function drawSpiders() {
         // Draw realistic animated spider with ground movement
         drawRealisticSpider(spider.x, spider.y + walkCycle, SPIDER_RADIUS, index * 150);
         
-        // Add dust particles under moving spider
-        if (Math.random() < 0.1) {
+        // Add dust particles under moving spider (only when not paused)
+        if (!gamePaused && Math.random() < 0.1) {
             ctx.fillStyle = 'rgba(139, 69, 19, 0.3)';
             for (let i = 0; i < 3; i++) {
                 const dustX = spider.x + (Math.random() - 0.5) * SPIDER_RADIUS;
@@ -677,6 +1340,29 @@ function drawParticles() {
     });
 }
 
+// ...draw horizontal shooting hint...
+function drawHorizontalShootingHint() {
+    if (gameRunning && !gamePaused) {
+        const hintText = "W/Ctrl: Up, S: Down-Left, A/D: Horizontal";
+        const hintX = canvas.width - 200;
+        const hintY = 70;
+        
+        // Pulsing effect
+        const pulse = Math.sin(Date.now() / 200) * 0.3 + 0.7;
+        
+        ctx.save();
+        ctx.fillStyle = `rgba(255, 255, 0, ${pulse})`;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'right';
+        
+        ctx.strokeText(hintText, hintX, hintY);
+        ctx.fillText(hintText, hintX, hintY);
+        ctx.restore();
+    }
+}
+
 // ...draw background...
 function drawBackground() {
     if (bgImg.complete && bgImg.naturalWidth !== 0) {
@@ -691,8 +1377,84 @@ function drawBackground() {
     }
 }
 
+// Function to draw information bar at the top
+function drawInfoBar() {
+    if (showSplash || gameOver) return; // Don't show info bar on splash or game over screens
+    
+    // Draw black background bar
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(0, 0, canvas.width, INFO_BAR_HEIGHT);
+    
+    // Add border at bottom of info bar
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fillRect(0, INFO_BAR_HEIGHT - 1, canvas.width, 1);
+    
+    // Set up text properties
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    
+    const centerY = INFO_BAR_HEIGHT / 2;
+    const leftMargin = 10;
+    let currentX = leftMargin;
+    
+    // Level information with icon
+    ctx.fillStyle = '#00ff88';
+    ctx.fillText('📊', currentX, centerY);
+    currentX += 25;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`Level ${currentLevel}`, currentX, centerY);
+    currentX += 80;
+    
+    // Spider progress with icon
+    const maxSpiders = spidersPerLevel[Math.min(currentLevel - 1, spidersPerLevel.length - 1)];
+    ctx.fillStyle = '#ff6600';
+    ctx.fillText('🕷️', currentX, centerY);
+    currentX += 25;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${spidersDefeatedThisLevel}/${maxSpiders}`, currentX, centerY);
+    currentX += 80;
+    
+    // Lives with heart icons
+    ctx.fillStyle = '#ff0000';
+    ctx.fillText('❤️', currentX, centerY);
+    currentX += 25;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`x${lives}`, currentX, centerY);
+    currentX += 50;
+    
+    // Score with icon
+    ctx.fillStyle = '#ffff00';
+    ctx.fillText('⭐', currentX, centerY);
+    currentX += 25;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${score}`, currentX, centerY);
+    
+    // Right side - Timer
+    ctx.textAlign = 'right';
+    const minutes = Math.floor(gameTime / 60);
+    const seconds = Math.floor(gameTime % 60);
+    const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    
+    ctx.fillStyle = '#00ccff';
+    ctx.fillText('⏱️', canvas.width - 60, centerY);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(timeString, canvas.width - 10, centerY);
+    
+    // Pause indicator if game is paused
+    if (gamePaused) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffff00';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText('⏸️ PAUSED', canvas.width / 2, centerY);
+    }
+}
+
 // ...move player...
 function movePlayer() {
+    if (gamePaused) return; // Stop all player movement when paused
+    
     if (leftPressed) playerX -= PLAYER_SPEED;
     if (rightPressed) playerX += PLAYER_SPEED;
     playerX = Math.max(0, Math.min(canvas.width - PLAYER_WIDTH, playerX));
@@ -723,15 +1485,165 @@ function movePlayer() {
 
 // ...move bullets...
 function moveBullets() {
+    if (gamePaused) return; // Stop all bullet movement when paused
+    
     // Move player vertical bullets
     bullets.forEach(bullet => bullet.y -= BULLET_SPEED);
-    bullets = bullets.filter(bullet => bullet.y + BULLET_HEIGHT > 0);
+    
+    // Check bullet collision with power-ups
+    bullets = bullets.filter(bullet => {
+        if (bullet.y + BULLET_HEIGHT < 0) return false;
+        
+        // Check collision with power-ups
+        for (let i = powerUpSpawns.length - 1; i >= 0; i--) {
+            const powerUp = powerUpSpawns[i];
+            const bobOffset = Math.sin(powerUp.bobTime / 200) * 5;
+            const powerUpCenterX = powerUp.x;
+            const powerUpCenterY = powerUp.y + bobOffset;
+            const bulletCenterX = bullet.x + BULLET_WIDTH / 2;
+            const bulletCenterY = bullet.y + BULLET_HEIGHT / 2;
+            
+            const distance = Math.sqrt(
+                Math.pow(bulletCenterX - powerUpCenterX, 2) + 
+                Math.pow(bulletCenterY - powerUpCenterY, 2)
+            );
+            
+            // Collision detected
+            if (distance < 30) { // Increased detection area for better power-up collection
+                collectPowerUp(powerUp.type);
+                powerUpSpawns.splice(i, 1);
+                
+                // Create collection effect particles
+                for (let j = 0; j < 12; j++) {
+                    const angle = (j / 12) * Math.PI * 2;
+                    const speed = 3 + Math.random() * 3;
+                    particles.push({
+                        x: powerUpCenterX,
+                        y: powerUpCenterY,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        alpha: 1,
+                        size: 3 + Math.random() * 4,
+                        color: POWER_UPS[powerUp.type].color,
+                        gravity: 0.02,
+                        life: 40
+                    });
+                }
+                
+                return false; // Remove the bullet
+            }
+        }
+        
+        return true;
+    });
     
     // Move player horizontal bullets
     horizontalBullets.forEach(bullet => bullet.x += bullet.direction * HORIZONTAL_BULLET_SPEED);
-    horizontalBullets = horizontalBullets.filter(bullet => 
-        bullet.x > -HORIZONTAL_BULLET_WIDTH && bullet.x < canvas.width + HORIZONTAL_BULLET_WIDTH
-    );
+    
+    // Check horizontal bullet collision with power-ups
+    horizontalBullets = horizontalBullets.filter(bullet => {
+        if (bullet.x < -HORIZONTAL_BULLET_WIDTH || bullet.x > canvas.width + HORIZONTAL_BULLET_WIDTH) {
+            return false;
+        }
+        
+        // Check collision with power-ups
+        for (let i = powerUpSpawns.length - 1; i >= 0; i--) {
+            const powerUp = powerUpSpawns[i];
+            const bobOffset = Math.sin(powerUp.bobTime / 200) * 5;
+            const powerUpCenterX = powerUp.x;
+            const powerUpCenterY = powerUp.y + bobOffset;
+            const bulletCenterX = bullet.x + HORIZONTAL_BULLET_WIDTH / 2;
+            const bulletCenterY = bullet.y + HORIZONTAL_BULLET_HEIGHT / 2;
+            
+            const distance = Math.sqrt(
+                Math.pow(bulletCenterX - powerUpCenterX, 2) + 
+                Math.pow(bulletCenterY - powerUpCenterY, 2)
+            );
+            
+            // Collision detected
+            if (distance < 30) { // Slightly larger detection area for horizontal bullets
+                collectPowerUp(powerUp.type);
+                powerUpSpawns.splice(i, 1);
+                
+                // Create collection effect particles
+                for (let j = 0; j < 12; j++) {
+                    const angle = (j / 12) * Math.PI * 2;
+                    const speed = 3 + Math.random() * 3;
+                    particles.push({
+                        x: powerUpCenterX,
+                        y: powerUpCenterY,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        alpha: 1,
+                        size: 3 + Math.random() * 4,
+                        color: POWER_UPS[powerUp.type].color,
+                        gravity: 0.02,
+                        life: 40
+                    });
+                }
+                
+                return false; // Remove the bullet
+            }
+        }
+        
+        return true;
+    });
+    
+    // Move diagonal bullets
+    diagonalBullets.forEach(bullet => {
+        bullet.x += bullet.directionX * HORIZONTAL_BULLET_SPEED;
+        bullet.y += bullet.directionY * HORIZONTAL_BULLET_SPEED * 0.7; // Slightly slower vertical movement
+    });
+    
+    // Check diagonal bullet collision with power-ups
+    diagonalBullets = diagonalBullets.filter(bullet => {
+        if (bullet.x < -HORIZONTAL_BULLET_WIDTH || bullet.x > canvas.width + HORIZONTAL_BULLET_WIDTH ||
+            bullet.y < -HORIZONTAL_BULLET_HEIGHT || bullet.y > canvas.height + HORIZONTAL_BULLET_HEIGHT) {
+            return false;
+        }
+        
+        // Check collision with power-ups
+        for (let i = powerUpSpawns.length - 1; i >= 0; i--) {
+            const powerUp = powerUpSpawns[i];
+            const bobOffset = Math.sin(powerUp.bobTime / 200) * 5;
+            const powerUpCenterX = powerUp.x;
+            const powerUpCenterY = powerUp.y + bobOffset;
+            const bulletCenterX = bullet.x + HORIZONTAL_BULLET_WIDTH / 2;
+            const bulletCenterY = bullet.y + HORIZONTAL_BULLET_HEIGHT / 2;
+            
+            const distance = Math.sqrt(
+                Math.pow(bulletCenterX - powerUpCenterX, 2) + 
+                Math.pow(bulletCenterY - powerUpCenterY, 2)
+            );
+            
+            // Collision detected
+            if (distance < 30) { // Slightly larger detection area for diagonal bullets
+                collectPowerUp(powerUp.type);
+                powerUpSpawns.splice(i, 1);
+                
+                // Create collection effect particles
+                for (let j = 0; j < 12; j++) {
+                    const angle = (j / 12) * Math.PI * 2;
+                    const speed = 3 + Math.random() * 3;
+                    particles.push({
+                        x: powerUpCenterX,
+                        y: powerUpCenterY,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        alpha: 1,
+                        size: 3 + Math.random() * 4,
+                        color: POWER_UPS[powerUp.type].color,
+                        gravity: 0.02,
+                        life: 40
+                    });
+                }
+                
+                return false; // Remove the bullet
+            }
+        }
+        
+        return true;
+    });
     
     // Move spider bullets
     spiderBullets.forEach(bullet => bullet.y += SPIDER_BULLET_SPEED);
@@ -740,31 +1652,92 @@ function moveBullets() {
 
 // ...update difficulty based on level...
 function updateDifficulty() {
-    // Spider speed increases gradually with level
-    SPIDER_SPEED = BASE_SPIDER_SPEED + (currentLevel - 1) * 0.3;
-    
-    // Bullet speed increases slightly with level (player gets better)
-    BULLET_SPEED = BASE_BULLET_SPEED + (currentLevel - 1) * 0.5;
+    // Very gradual difficulty increase for better accessibility
+    if (currentLevel === 1) {
+        SPIDER_SPEED = BASE_SPIDER_SPEED;
+        BULLET_SPEED = BASE_BULLET_SPEED;
+    } else if (currentLevel === 2) {
+        SPIDER_SPEED = BASE_SPIDER_SPEED + 0.05; // Very small increase
+        BULLET_SPEED = BASE_BULLET_SPEED + 0.1;
+    } else if (currentLevel === 3) {
+        SPIDER_SPEED = BASE_SPIDER_SPEED + 0.1;
+        BULLET_SPEED = BASE_BULLET_SPEED + 0.15;
+    } else if (currentLevel === 4) {
+        SPIDER_SPEED = BASE_SPIDER_SPEED + 0.15;
+        BULLET_SPEED = BASE_BULLET_SPEED + 0.2;
+    } else if (currentLevel === 5) {
+        SPIDER_SPEED = BASE_SPIDER_SPEED + 0.2;
+        BULLET_SPEED = BASE_BULLET_SPEED + 0.25;
+    } else if (currentLevel === 6) {
+        SPIDER_SPEED = BASE_SPIDER_SPEED + 0.25;
+        BULLET_SPEED = BASE_BULLET_SPEED + 0.3;
+    } else {
+        // After level 6, very gradual speed increases with cap
+        const speedIncrease = Math.min(0.5, 0.25 + (currentLevel - 6) * 0.05); // Cap at +0.5
+        SPIDER_SPEED = BASE_SPIDER_SPEED + speedIncrease;
+        BULLET_SPEED = BASE_BULLET_SPEED + speedIncrease + 0.3; // Keep bullets faster than spiders
+        
+        // Focus on pattern-based difficulty rather than overwhelming speed
+        // - More erratic spider movement patterns
+        // - Spiders that change direction
+        // - Different spider behaviors
+    }
 }
 
 // ...move spiders...
 function moveSpiders() {
+    if (gamePaused) return; // Stop all spider movement when paused
+    
+    // Freeze time power-up slows down spiders
+    const freezeMultiplier = hasPowerUp('FREEZE_TIME') ? 0.2 : 1.0;
+    
     spiders.forEach((spider, idx) => {
-        spider.y += SPIDER_SPEED;
+        // Level-based spider behavior
+        if (currentLevel >= 3) {
+            // Level 3+: Random swinging while dropping at slow rate
+            const swayAmount = Math.sin(Date.now() / 600 + idx) * 1.2 * freezeMultiplier;
+            spider.x += swayAmount;
+            
+            // Keep spiders within bounds
+            spider.x = Math.max(SPIDER_RADIUS, Math.min(canvas.width - SPIDER_RADIUS, spider.x));
+            
+            // Random direction changes for swinging effect
+            if (Math.random() < 0.012 * freezeMultiplier) {
+                spider.x += (Math.random() - 0.5) * 30 * freezeMultiplier;
+                spider.x = Math.max(SPIDER_RADIUS, Math.min(canvas.width - SPIDER_RADIUS, spider.x));
+            }
+        }
         
-        // Spider shoots at player when in range
-        const distanceToPlayer = Math.abs(spider.x - (playerX + PLAYER_WIDTH / 2));
-        const shouldShoot = spider.y > 100 && distanceToPlayer < 150 && Math.random() < 0.005 + (currentLevel - 1) * 0.002;
+        // Apply speed based on level
+        let spiderSpeed = SPIDER_SPEED;
+        if (currentLevel >= 5 && currentLevel <= 7) {
+            spiderSpeed = SPIDER_SPEED * 1.2; // Little speed increase for levels 5-7
+        }
         
-        if (shouldShoot) {
-            spiderShoot(spider.x, spider.y);
+        spider.y += spiderSpeed * freezeMultiplier;
+        
+        // Level 5-7: Some random straight-dropping spiders shoot at player
+        if (currentLevel >= 5 && currentLevel <= 7) {
+            if (Math.random() < 0.001 && spider.y > 100) { // Very low chance, only when spider is lower
+                spiderShoot(spider.x, spider.y);
+            }
+        }
+        
+        // Level 8+: Hanging spiders start shooting while descending
+        if (currentLevel >= 8) {
+            const distanceToPlayer = Math.abs(spider.x - (playerX + PLAYER_WIDTH / 2));
+            const shootChance = (0.002 + (currentLevel - 8) * 0.0005) * freezeMultiplier;
+            const shouldShoot = spider.y > 150 && distanceToPlayer < 120 && Math.random() < shootChance;
+            if (shouldShoot) {
+                spiderShoot(spider.x, spider.y);
+            }
         }
         
         // Check if spider reached the ground
-        if (spider.y >= canvas.height - SPIDER_RADIUS) {
+        if (spider.y >= GROUND_Y - SPIDER_RADIUS) {
             groundSpiders.push({
                 x: spider.x,
-                y: canvas.height - SPIDER_RADIUS,
+                y: GROUND_Y - SPIDER_RADIUS, // Same level as player
                 targetX: playerX + PLAYER_WIDTH / 2,
                 lastShot: Date.now(),
                 animationFrame: 0 // Animation frame for ground spider
@@ -797,6 +1770,8 @@ function spiderShoot(x, y) {
 
 // ...move spider bullets...
 function moveSpiderBullets() {
+    if (gamePaused) return; // Stop all spider bullet movement when paused
+    
     spiderBullets.forEach(bullet => {
         bullet.x += bullet.vx;
         bullet.y += bullet.vy;
@@ -811,25 +1786,42 @@ function moveSpiderBullets() {
 
 // ...auto horizontal shooting...
 function autoHorizontalShoot() {
-    // Check for ground spiders approaching the player
-    groundSpiders.forEach(spider => {
-        const distanceToPlayer = Math.abs(spider.x - (playerX + PLAYER_WIDTH / 2));
-        const isInRange = distanceToPlayer < 120; // Shooting range
-        const shouldShoot = isInRange && Math.random() < 0.3; // 30% chance per frame when in range
-        
-        if (shouldShoot) {
-            const direction = spider.x > playerX + PLAYER_WIDTH / 2 ? 1 : -1; // Shoot toward spider
-            shootHorizontalBullet(direction);
-        }
-    });
+    if (gamePaused) return; // Stop shooting when paused
+    
+    const now = Date.now();
+    const shootCooldown = 200; // 200ms cooldown between shots
+    
+    // Handle all directional shooting (now works at all times, not just when ground spiders present)
+    if (shootLeftPressed && now - lastHorizontalShot > shootCooldown) {
+        shootHorizontalBullet(-1); // Shoot left
+        lastHorizontalShot = now;
+    }
+    if (shootRightPressed && now - lastHorizontalShot > shootCooldown) {
+        shootHorizontalBullet(1); // Shoot right
+        lastHorizontalShot = now;
+    }
+    if (shootLeftUpPressed && now - lastHorizontalShot > shootCooldown) {
+        shoot(); // Shoot vertically upward like Ctrl key
+        lastHorizontalShot = now;
+    }
+    if (shootLeftDownPressed && now - lastHorizontalShot > shootCooldown) {
+        shootDiagonalBullet(-1, 1); // Shoot left down
+        lastHorizontalShot = now;
+    }
 }
 
 // ...shoot horizontal bullet...
 function shootHorizontalBullet(direction) {
-    const bulletY = playerY + PLAYER_HEIGHT / 2 - HORIZONTAL_BULLET_HEIGHT / 2;
+    if (!gameRunning || gamePaused || showSplash) return;
+    
+    // Always shoot from the gun nozzle position, regardless of player's Y position
+    const gunNozzleX = playerX + PLAYER_WIDTH / 2;
+    const gunNozzleY = playerY - PLAYER_HEIGHT * 0.3; // Same as vertical bullets
+    
     const bulletX = direction > 0 ? 
-        playerX + PLAYER_WIDTH : 
-        playerX - HORIZONTAL_BULLET_WIDTH;
+        gunNozzleX : 
+        gunNozzleX - HORIZONTAL_BULLET_WIDTH;
+    const bulletY = gunNozzleY;
     
     horizontalBullets.push({
         x: bulletX,
@@ -840,16 +1832,44 @@ function shootHorizontalBullet(direction) {
     // Play shoot sound
     if (shootSound) {
         shootSound.currentTime = 0;
-        shootSound.play();
+        shootSound.play().catch(e => console.log('Shoot sound failed to play:', e));
+    }
+}
+
+// ...shoot diagonal bullet...
+function shootDiagonalBullet(directionX, directionY) {
+    if (!gameRunning || gamePaused || showSplash) return;
+    
+    // Always shoot from the gun nozzle position
+    const gunNozzleX = playerX + PLAYER_WIDTH / 2;
+    const gunNozzleY = playerY - PLAYER_HEIGHT * 0.3; // Same as vertical bullets
+    
+    const bulletX = gunNozzleX - HORIZONTAL_BULLET_WIDTH / 2;
+    const bulletY = gunNozzleY;
+    
+    diagonalBullets.push({
+        x: bulletX,
+        y: bulletY,
+        directionX: directionX,
+        directionY: directionY
+    });
+    
+    // Play shoot sound
+    if (shootSound) {
+        shootSound.currentTime = 0;
+        shootSound.play().catch(e => console.log('Shoot sound failed to play:', e));
     }
 }
 
 // ...move ground spiders toward player...
 function moveGroundSpiders() {
+    if (gamePaused) return; // Stop all movement when paused
+    
     const now = Date.now();
     groundSpiders.forEach(spider => {
         const dx = (playerX + PLAYER_WIDTH / 2) - spider.x;
-        const speed = 1 + (currentLevel - 1) * 0.2; // Ground spiders get faster with level
+        // Slower, more manageable ground spider speed
+        const speed = 0.8 + (currentLevel - 1) * 0.1; // Much slower progression
         
         if (Math.abs(dx) > speed) {
             spider.x += dx > 0 ? speed : -speed;
@@ -857,40 +1877,96 @@ function moveGroundSpiders() {
             spider.x = playerX + PLAYER_WIDTH / 2;
         }
         
-        // Ground spiders shoot more frequently
-        const shootInterval = 1500 - (currentLevel - 1) * 100; // Faster shooting at higher levels
-        if (now - spider.lastShot > shootInterval && Math.random() < 0.3) {
-            spiderShoot(spider.x, spider.y);
-            spider.lastShot = now;
-        }
+        // Ground spiders don't shoot in the new level system - they just chase
+        // All shooting comes from hanging spiders based on level requirements
     });
 }
 
 // ...spawn spider...
 function spawnSpider() {
-    const now = Date.now();
-    // Spawn interval decreases with level, but starts slower for level 1
-    const levelSpawnInterval = Math.max(800, BASE_SPIDER_SPAWN_INTERVAL - (currentLevel - 1) * 150);
+    if (gamePaused) return; // Stop spawning when paused
     
-    if (now - lastSpiderSpawn > levelSpawnInterval) {
-        const x = Math.random() * (canvas.width - SPIDER_RADIUS * 2) + SPIDER_RADIUS;
-        spiders.push({ 
-            x, 
-            y: 0,
-            lastShot: now - Math.random() * 1000, // Random initial shot delay
-            animationFrame: 0 // Animation frame for spider
-        });
-        lastSpiderSpawn = now;
-        
-        // Chance to spawn additional spiders at higher levels
-        if (currentLevel > 3 && Math.random() < (currentLevel - 3) * 0.1) {
-            const x2 = Math.random() * (canvas.width - SPIDER_RADIUS * 2) + SPIDER_RADIUS;
-            spiders.push({ 
-                x: x2, 
+    const now = Date.now();
+    const maxSpiders = spidersPerLevel[Math.min(currentLevel - 1, spidersPerLevel.length - 1)];
+    
+    // Allow continuous spawning - only check if we haven't defeated enough spiders yet
+    if (spidersDefeatedThisLevel >= maxSpiders) return; // Stop spawning when level is complete
+    
+    if (currentLevel === 1) {
+        // Level 1: Very slow spawn rate - only spawn a new spider if none are present
+        if (spiders.length === 0 && groundSpiders.length === 0) {
+            const x = Math.random() * (canvas.width - SPIDER_RADIUS * 2) + SPIDER_RADIUS;
+            spiders.push({
+                x,
                 y: 0,
                 lastShot: now - Math.random() * 1000,
-                animationFrame: 0 // Animation frame for spider
+                animationFrame: 0
             });
+            lastSpiderSpawn = now;
+            spidersSpawnedThisLevel++;
+        }
+    } else if (currentLevel === 2) {
+        // Level 2: Still very slow spawn rate
+        if (now - lastSpiderSpawn > 4000) { // 4 seconds between spawns
+            const x = Math.random() * (canvas.width - SPIDER_RADIUS * 2) + SPIDER_RADIUS;
+            spiders.push({
+                x,
+                y: 0,
+                lastShot: now - Math.random() * 1000,
+                animationFrame: 0
+            });
+            lastSpiderSpawn = now;
+            spidersSpawnedThisLevel++;
+        }
+    } else {
+        // Higher levels: Controlled spawn rates
+        let levelSpawnInterval;
+        if (currentLevel === 2) {
+            levelSpawnInterval = 3000; // Level 2: 3 seconds between spawns
+        } else if (currentLevel === 3) {
+            levelSpawnInterval = 2800; // Level 3: 2.8 seconds
+        } else if (currentLevel === 4) {
+            levelSpawnInterval = 2600; // Level 4: 2.6 seconds
+        } else if (currentLevel === 5) {
+            levelSpawnInterval = 2400; // Level 5: 2.4 seconds
+        } else if (currentLevel === 6) {
+            levelSpawnInterval = 2200; // Level 6: 2.2 seconds
+        } else {
+            // Levels 7+: Gradually decrease but stay reasonable
+            levelSpawnInterval = Math.max(1500, 2200 - (currentLevel - 6) * 50);
+        }
+        
+        // Continue spawning as long as there are fewer spiders on screen than needed and level isn't complete
+        const totalSpidersOnScreen = spiders.length + groundSpiders.length;
+        const maxConcurrentSpiders = Math.min(3 + Math.floor(currentLevel / 3), 6); // Max 6 spiders on screen at once
+        
+        if (now - lastSpiderSpawn > levelSpawnInterval && totalSpidersOnScreen < maxConcurrentSpiders) {
+            const x = Math.random() * (canvas.width - SPIDER_RADIUS * 2) + SPIDER_RADIUS;
+            spiders.push({
+                x,
+                y: 0,
+                lastShot: now - Math.random() * 1000,
+                animationFrame: 0
+            });
+            lastSpiderSpawn = now;
+            spidersSpawnedThisLevel++;
+            
+            // Remove aggressive double spawning - only very rare extra spawns for higher levels
+            if (currentLevel >= 8 && Math.random() < 0.15 && totalSpidersOnScreen < maxConcurrentSpiders - 1) {
+                // Only 15% chance for extra spawn, and only from level 8+
+                setTimeout(() => {
+                    if (spiders.length + groundSpiders.length < maxConcurrentSpiders) {
+                        const x2 = Math.random() * (canvas.width - SPIDER_RADIUS * 2) + SPIDER_RADIUS;
+                        spiders.push({
+                            x: x2,
+                            y: 0,
+                            lastShot: now - Math.random() * 1000,
+                            animationFrame: 0
+                        });
+                        spidersSpawnedThisLevel++;
+                    }
+                }, 1500); // Longer delay for better spacing
+            }
         }
     }
 }
@@ -900,6 +1976,12 @@ function updateParticles() {
     particles.forEach(p => {
         p.x += p.vx;
         p.y += p.vy;
+        
+        // Apply gravity to footstep particles
+        if (p.gravity) {
+            p.vy += p.gravity;
+        }
+        
         p.alpha -= 0.03;
     });
     particles = particles.filter(p => p.alpha > 0);
@@ -926,20 +2008,29 @@ function checkCollisions() {
     // Vertical bullet vs hanging spiders
     bullets.forEach((bullet, bIdx) => {
         spiders.forEach((spider, sIdx) => {
-            if (
-                bullet.x > spider.x - SPIDER_RADIUS &&
-                bullet.x < spider.x + SPIDER_RADIUS &&
-                bullet.y > spider.y - SPIDER_RADIUS &&
-                bullet.y < spider.y + SPIDER_RADIUS
-            ) {
+            // Use circular collision detection for better accuracy
+            const bulletCenterX = bullet.x + BULLET_WIDTH / 2;
+            const bulletCenterY = bullet.y + BULLET_HEIGHT / 2;
+            const distance = Math.sqrt(
+                Math.pow(bulletCenterX - spider.x, 2) + 
+                Math.pow(bulletCenterY - spider.y, 2)
+            );
+            
+            if (distance < SPIDER_RADIUS + 8) { // Increased tolerance for easier hitting
                 const points = 20 + (currentLevel - 1) * 5; // More points at higher levels
                 score += points;
                 levelScore += points;
                 spawnParticles(spider.x, spider.y);
+                
+                // Blast power effect - create explosion at spider location
+                if (hasPowerUp('BLAST_POWER')) {
+                    createExplosion(spider.x, spider.y);
+                }
+                
                 spiders.splice(sIdx, 1);
                 bullets.splice(bIdx, 1);
+                spidersDefeatedThisLevel++;
                 if (breakSound) breakSound.currentTime = 0, breakSound.play();
-                
                 // Check level progression
                 checkLevelUp();
             }
@@ -947,16 +2038,25 @@ function checkCollisions() {
         
         // Vertical bullet vs ground spiders
         groundSpiders.forEach((spider, sIdx) => {
-            if (
-                bullet.x > spider.x - SPIDER_RADIUS &&
-                bullet.x < spider.x + SPIDER_RADIUS &&
-                bullet.y > spider.y - SPIDER_RADIUS &&
-                bullet.y < spider.y + SPIDER_RADIUS
-            ) {
+            // Use circular collision detection for better accuracy
+            const bulletCenterX = bullet.x + BULLET_WIDTH / 2;
+            const bulletCenterY = bullet.y + BULLET_HEIGHT / 2;
+            const distance = Math.sqrt(
+                Math.pow(bulletCenterX - spider.x, 2) + 
+                Math.pow(bulletCenterY - spider.y, 2)
+            );
+            
+            if (distance < SPIDER_RADIUS + 8) { // Increased tolerance for easier hitting
                 const points = 30 + (currentLevel - 1) * 5; // More points at higher levels
                 score += points;
                 levelScore += points;
                 spawnParticles(spider.x, spider.y);
+                
+                // Blast power effect - create explosion at spider location
+                if (hasPowerUp('BLAST_POWER')) {
+                    createExplosion(spider.x, spider.y);
+                }
+                
                 groundSpiders.splice(sIdx, 1);
                 bullets.splice(bIdx, 1);
                 if (breakSound) breakSound.currentTime = 0, breakSound.play();
@@ -970,17 +2070,56 @@ function checkCollisions() {
     // Horizontal bullet vs ground spiders
     horizontalBullets.forEach((bullet, bIdx) => {
         groundSpiders.forEach((spider, sIdx) => {
-            if (
-                bullet.x < spider.x + SPIDER_RADIUS &&
-                bullet.x + HORIZONTAL_BULLET_WIDTH > spider.x - SPIDER_RADIUS &&
-                bullet.y < spider.y + SPIDER_RADIUS &&
-                bullet.y + HORIZONTAL_BULLET_HEIGHT > spider.y - SPIDER_RADIUS
-            ) {
+            // More precise collision detection
+            const bulletCenterX = bullet.x + HORIZONTAL_BULLET_WIDTH / 2;
+            const bulletCenterY = bullet.y + HORIZONTAL_BULLET_HEIGHT / 2;
+            const distance = Math.sqrt(
+                Math.pow(bulletCenterX - spider.x, 2) + 
+                Math.pow(bulletCenterY - spider.y, 2)
+            );
+            
+            if (distance < SPIDER_RADIUS + 8) { // Increased tolerance for easier hitting
                 const points = 40 + (currentLevel - 1) * 5; // Bonus points for horizontal shots
                 score += points;
                 levelScore += points;
                 spawnParticles(spider.x, spider.y);
+                
+                // Blast power effect - create explosion at spider location
+                if (hasPowerUp('BLAST_POWER')) {
+                    createExplosion(spider.x, spider.y);
+                }
+                
                 groundSpiders.splice(sIdx, 1);
+                horizontalBullets.splice(bIdx, 1);
+                if (breakSound) breakSound.currentTime = 0, breakSound.play();
+                
+                // Check level progression
+                checkLevelUp();
+                return; // Exit early to avoid processing this bullet further
+            }
+        });
+        
+        // Horizontal bullet vs hanging spiders (improved collision detection)
+        spiders.forEach((spider, sIdx) => {
+            const bulletCenterX = bullet.x + HORIZONTAL_BULLET_WIDTH / 2;
+            const bulletCenterY = bullet.y + HORIZONTAL_BULLET_HEIGHT / 2;
+            const distance = Math.sqrt(
+                Math.pow(bulletCenterX - spider.x, 2) + 
+                Math.pow(bulletCenterY - spider.y, 2)
+            );
+            
+            if (distance < SPIDER_RADIUS + 8) { // Increased tolerance for easier hitting
+                const points = 35 + (currentLevel - 1) * 5; // Bonus for creative shots
+                score += points;
+                levelScore += points;
+                spawnParticles(spider.x, spider.y);
+                
+                // Blast power effect - create explosion at spider location
+                if (hasPowerUp('BLAST_POWER')) {
+                    createExplosion(spider.x, spider.y);
+                }
+                
+                spiders.splice(sIdx, 1);
                 horizontalBullets.splice(bIdx, 1);
                 if (breakSound) breakSound.currentTime = 0, breakSound.play();
                 
@@ -988,22 +2127,61 @@ function checkCollisions() {
                 checkLevelUp();
             }
         });
-        
-        // Horizontal bullet vs hanging spiders (if they're low enough)
+    });
+    
+    // Diagonal bullet vs spiders
+    diagonalBullets.forEach((bullet, bIdx) => {
+        // Check against hanging spiders
         spiders.forEach((spider, sIdx) => {
-            if (
-                spider.y > PLAYER_Y - 50 && // Only if spider is near player level
-                bullet.x < spider.x + SPIDER_RADIUS &&
-                bullet.x + HORIZONTAL_BULLET_WIDTH > spider.x - SPIDER_RADIUS &&
-                bullet.y < spider.y + SPIDER_RADIUS &&
-                bullet.y + HORIZONTAL_BULLET_HEIGHT > spider.y - SPIDER_RADIUS
-            ) {
-                const points = 35 + (currentLevel - 1) * 5; // Bonus for creative shots
+            const bulletCenterX = bullet.x + HORIZONTAL_BULLET_WIDTH / 2;
+            const bulletCenterY = bullet.y + HORIZONTAL_BULLET_HEIGHT / 2;
+            const distance = Math.sqrt(
+                Math.pow(bulletCenterX - spider.x, 2) + 
+                Math.pow(bulletCenterY - spider.y, 2)
+            );
+            
+            if (distance < SPIDER_RADIUS + 8) { // Increased tolerance for easier hitting
+                const points = 25 + (currentLevel - 1) * 5; // Points for diagonal shots
                 score += points;
                 levelScore += points;
                 spawnParticles(spider.x, spider.y);
+                
+                // Blast power effect
+                if (hasPowerUp('BLAST_POWER')) {
+                    createExplosion(spider.x, spider.y);
+                }
+                
                 spiders.splice(sIdx, 1);
-                horizontalBullets.splice(bIdx, 1);
+                diagonalBullets.splice(bIdx, 1);
+                if (breakSound) breakSound.currentTime = 0, breakSound.play();
+                
+                // Check level progression
+                checkLevelUp();
+            }
+        });
+        
+        // Check against ground spiders
+        groundSpiders.forEach((spider, sIdx) => {
+            const bulletCenterX = bullet.x + HORIZONTAL_BULLET_WIDTH / 2;
+            const bulletCenterY = bullet.y + HORIZONTAL_BULLET_HEIGHT / 2;
+            const distance = Math.sqrt(
+                Math.pow(bulletCenterX - spider.x, 2) + 
+                Math.pow(bulletCenterY - spider.y, 2)
+            );
+            
+            if (distance < SPIDER_RADIUS + 8) { // Increased tolerance for easier hitting
+                const points = 30 + (currentLevel - 1) * 5; // Points for diagonal shots on ground spiders
+                score += points;
+                levelScore += points;
+                spawnParticles(spider.x, spider.y);
+                
+                // Blast power effect
+                if (hasPowerUp('BLAST_POWER')) {
+                    createExplosion(spider.x, spider.y);
+                }
+                
+                groundSpiders.splice(sIdx, 1);
+                diagonalBullets.splice(bIdx, 1);
                 if (breakSound) breakSound.currentTime = 0, breakSound.play();
                 
                 // Check level progression
@@ -1044,13 +2222,26 @@ function checkCollisions() {
 
 // ...level and life management...
 function checkLevelUp() {
+    const maxSpiders = spidersPerLevel[Math.min(currentLevel - 1, spidersPerLevel.length - 1)];
     const requiredScore = scoreToNextLevel * currentLevel;
-    if (levelScore >= requiredScore && currentLevel < maxLevel) {
+    // End level if all spiders defeated
+    if (spidersDefeatedThisLevel >= maxSpiders && currentLevel < maxLevel) {
         currentLevel++;
         levelScore = 0;
         lives = Math.min(maxLives, lives + 1); // Bonus life on level up
         updateDifficulty(); // Update speeds based on new level
         showLevelUpMessage();
+        spidersSpawnedThisLevel = 0;
+        spidersDefeatedThisLevel = 0;
+    } else if (levelScore >= requiredScore && currentLevel < maxLevel) {
+        // Fallback: allow score-based progression too
+        currentLevel++;
+        levelScore = 0;
+        lives = Math.min(maxLives, lives + 1); // Bonus life on level up
+        updateDifficulty(); // Update speeds based on new level
+        showLevelUpMessage();
+        spidersSpawnedThisLevel = 0;
+        spidersDefeatedThisLevel = 0;
     }
 }
 
@@ -1191,16 +2382,21 @@ function drawLevelTransition() {
         ctx.fillStyle = `rgba(255, 170, 0, ${textAlpha * 0.4})`;
         ctx.font = 'bold 26px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('GET READY!', 0, 0);
-        
+        if (newLevelNumber === 8) {
+            ctx.fillText('Now spiders can shoot too!', 0, 0);
+        } else {
+            ctx.fillText('GET READY!', 0, 0);
+        }
         // Reset shadow
         ctx.shadowBlur = 0;
-        
         // Main subtitle
         ctx.fillStyle = `rgba(255, 215, 0, ${textAlpha})`;
         ctx.font = 'bold 24px Arial';
-        ctx.fillText('GET READY!', 0, 0);
-        
+        if (newLevelNumber === 8) {
+            ctx.fillText('Now spiders can shoot too!', 0, 0);
+        } else {
+            ctx.fillText('GET READY!', 0, 0);
+        }
         ctx.restore();
         
         // Add some particle effects
@@ -1276,12 +2472,14 @@ function drawSplash() {
     // Draw 3D control instructions
     draw3DText('Arrow Keys: Move', canvas.width / 2, canvas.height / 2 + 20, 18, 'control');
     draw3DText('Up Arrow: Jump', canvas.width / 2, canvas.height / 2 + 45, 18, 'control');
-    draw3DText('Ctrl: Shoot', canvas.width / 2, canvas.height / 2 + 70, 18, 'control');
-    draw3DText('P: Pause', canvas.width / 2, canvas.height / 2 + 95, 18, 'control');
-    draw3DText('M: Toggle Music', canvas.width / 2, canvas.height / 2 + 120, 18, 'control');
+    draw3DText('Ctrl/W: Shoot Up', canvas.width / 2, canvas.height / 2 + 70, 18, 'control');
+    draw3DText('S: Shoot Left Down', canvas.width / 2, canvas.height / 2 + 95, 18, 'control');
+    draw3DText('A: Left, D: Right', canvas.width / 2, canvas.height / 2 + 120, 18, 'control');
+    draw3DText('P: Pause', canvas.width / 2, canvas.height / 2 + 145, 18, 'control');
+    draw3DText('M: Toggle Music', canvas.width / 2, canvas.height / 2 + 170, 18, 'control');
     
     if (isMobile) {
-        draw3DText('Touch controls available on mobile', canvas.width / 2, canvas.height / 2 + 155, 18, 'control');
+        draw3DText('Touch controls available on mobile', canvas.width / 2, canvas.height / 2 + 205, 18, 'control');
     }
     
     // Add some sparkle effects
@@ -1300,79 +2498,39 @@ function drawSplash() {
 
 // ...draw score with shadow...
 function drawScore() {
-    // Update menu animation for 3D effects
-    menuAnimationTime += 16;
-    
-    // Draw score with 3D metallic effect
-    ctx.textAlign = 'left';
-    draw3DText('Score: ' + score, 120, 30, 24, 'score');
-    
-    // Draw level with 3D effect  
-    draw3DText('Level: ' + currentLevel, 120, 60, 24, 'score');
-    
-    // Draw lives with heart symbols
-    ctx.fillStyle = '#f00';
-    ctx.font = '20px Arial';
-    for (let i = 0; i < lives; i++) {
-        // Add subtle 3D effect to hearts
-        ctx.fillStyle = '#800';
-        ctx.fillText('♥', 21 + i * 25, 91);
-        ctx.fillStyle = '#f00';
-        ctx.fillText('♥', 20 + i * 25, 90);
-    }
-    
-    // Draw level progress bar with enhanced effects
-    if (currentLevel <= maxLevel) {
-        const requiredScore = scoreToNextLevel * currentLevel;
-        const progress = Math.min(100, (levelScore / requiredScore) * 100);
-        
-        // Progress bar background with depth
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        ctx.fillRect(22, 102, 200, 10);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.fillRect(20, 100, 200, 10);
-        
-        // Progress bar fill with gradient
-        const progressGradient = ctx.createLinearGradient(20, 100, 220, 110);
-        progressGradient.addColorStop(0, '#00ff00');
-        progressGradient.addColorStop(0.5, '#88ff88');
-        progressGradient.addColorStop(1, '#00aa00');
-        ctx.fillStyle = progressGradient;
-        ctx.fillRect(20, 100, (200 * progress) / 100, 10);
-        
-        // Progress highlight
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-        ctx.fillRect(20, 100, (200 * progress) / 100, 3);
-        
-        // Progress text with 3D effect
-        draw3DText(`Level Progress: ${Math.floor(progress)}%`, 120, 125, 14, 'control');
-    }
+    // Since we now have the info bar, we can make this function simpler
+    // or use it for additional score display if needed
+    // The main info is now shown in the top info bar
+    return; // Skip drawing the old score display since we have the info bar
 }
 
 // ...draw timer...
 function drawTimer() {
-    const minutes = Math.floor(gameTime / 60);
-    const seconds = Math.floor(gameTime % 60);
-    const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    
-    // Draw timer with 3D metallic effect
-    ctx.textAlign = 'right';
-    draw3DText('Time: ' + timeString, canvas.width - 100, 30, 24, 'score');
+    // Timer is now shown in the info bar, so this function can be simplified
+    return; // Skip drawing the separate timer since it's in the info bar
 }
 
 // ...draw pause screen...
 function drawPauseScreen() {
-    // Draw pause indicator in corner instead of overlay
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(canvas.width / 2 - 80, 20, 160, 60);
+    // Since the pause indicator is now shown in the info bar, 
+    // we can make this simpler or add a subtle overlay
+    
+    // Optional: Add a subtle overlay to indicate pause state
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+    ctx.fillRect(0, INFO_BAR_HEIGHT, canvas.width, canvas.height - INFO_BAR_HEIGHT);
+    
+    // Center message below info bar
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(canvas.width / 2 - 100, canvas.height / 2 - 30, 200, 60);
     
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 24px Arial';
+    ctx.font = 'bold 20px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('PAUSED', canvas.width / 2, 50);
+    ctx.fillText('Game Paused', canvas.width / 2, canvas.height / 2 - 5);
     
     ctx.fillStyle = '#ff0';
-    ctx.fillText('PAUSED', canvas.width / 2 + 2, 52);
+    ctx.font = '16px Arial';
+    ctx.fillText('Press P to Resume', canvas.width / 2, canvas.height / 2 + 20);
 }
 
 // ...draw game over screen...
@@ -1398,8 +2556,8 @@ function drawGameOver() {
     }
     
     // Game Over text with dramatic 3D effect
-    draw3DText('GAME OVER', canvas.width / 2, canvas.height / 2 - 60, 48, 'gameOver');
-    
+    draw3DText('G A M E   O V E R', canvas.width / 2, canvas.height / 2 - 60, 48, 'gameOver');
+
     // Final score with metallic effect
     draw3DText('Final Score: ' + score, canvas.width / 2, canvas.height / 2 - 10, 32, 'score');
     draw3DText('Level Reached: ' + currentLevel, canvas.width / 2, canvas.height / 2 + 30, 32, 'score');
@@ -1445,10 +2603,14 @@ function draw() {
     }
     
     drawBackground();
+    drawInfoBar(); // Draw the information bar at the top
     drawPlayer();
     drawBullets();
     drawSpiders();
+    drawPowerUps(); // Draw power-up spawns
     drawParticles();
+    drawPowerUpUI(); // Draw active power-up indicators
+    drawHorizontalShootingHint(); // Show horizontal shooting hints
     drawScore();
     drawTimer();
     
@@ -1482,6 +2644,8 @@ function update() {
     moveSpiders();
     moveGroundSpiders();
     spawnSpider();
+    spawnPowerUp(); // Spawn power-ups
+    updatePowerUps(); // Update power-up system
     autoHorizontalShoot(); // Auto horizontal shooting
     checkCollisions();
     updateParticles();
@@ -1539,7 +2703,14 @@ document.addEventListener('keydown', e => {
             bullets = [];
             spiderBullets = [];
             horizontalBullets = [];
+            diagonalBullets = [];
             particles = [];
+            
+            // Reset power-up system
+            activePowerUps = [];
+            powerUpSpawns = [];
+            lastPowerUpSpawn = 0;
+            machineGunTimer = 0;
             
             // Reset game states
             gameOver = false;
@@ -1559,6 +2730,10 @@ document.addEventListener('keydown', e => {
             rightPressed = false;
             upPressed = false;
             shootPressed = false;
+            shootLeftUpPressed = false;
+            shootLeftDownPressed = false;
+            shootLeftPressed = false;
+            shootRightPressed = false;
             
             // Reset difficulty to level 1
             SPIDER_SPEED = BASE_SPIDER_SPEED;
@@ -1584,18 +2759,40 @@ document.addEventListener('keydown', e => {
     if (e.code === 'ArrowRight') rightPressed = true;
     if (e.code === 'ArrowUp') upPressed = true;
     if (e.code === 'ControlLeft' || e.code === 'ControlRight') shootPressed = true;
+    if (e.code === 'KeyW') shootLeftUpPressed = true; // W key for left up shooting
+    if (e.code === 'KeyS') shootLeftDownPressed = true; // S key for left down shooting
+    if (e.code === 'KeyA') shootLeftPressed = true; // A key for horizontal left shooting
+    if (e.code === 'KeyD') shootRightPressed = true; // D key for horizontal right shooting
     if (e.code === 'KeyP') {
         gamePaused = !gamePaused;
         
         if (gamePaused) {
             pauseStartTime = Date.now();
             if (backgroundMusic && !backgroundMusic.paused) backgroundMusic.pause();
+            // Stop any existing resume sound and play pause sound
+            if (resumeSound) {
+                resumeSound.pause();
+                resumeSound.currentTime = 0;
+            }
+            if (pauseSound) {
+                pauseSound.currentTime = 0;
+                pauseSound.play().catch(e => console.log('Pause sound failed to play:', e));
+            }
         } else {
             if (pauseStartTime > 0) {
                 totalPauseTime += Date.now() - pauseStartTime;
                 pauseStartTime = 0;
             }
             if (backgroundMusic && backgroundMusic.paused) backgroundMusic.play().catch(e => console.log('Music play failed'));
+            // Stop pause sound first, then play resume sound
+            if (pauseSound) {
+                pauseSound.pause();
+                pauseSound.currentTime = 0;
+            }
+            if (resumeSound) {
+                resumeSound.currentTime = 0;
+                resumeSound.play().catch(e => console.log('Resume sound failed to play:', e));
+            }
         }
     }
     if (e.code === 'KeyM') {
@@ -1616,13 +2813,129 @@ document.addEventListener('keyup', e => {
     if (e.code === 'ArrowRight') rightPressed = false;
     if (e.code === 'ArrowUp') upPressed = false;
     if (e.code === 'ControlLeft' || e.code === 'ControlRight') shootPressed = false;
+    if (e.code === 'KeyW') shootLeftUpPressed = false; // W key for left up shooting
+    if (e.code === 'KeyS') shootLeftDownPressed = false; // S key for left down shooting
+    if (e.code === 'KeyA') shootLeftPressed = false; // A key for horizontal left shooting
+    if (e.code === 'KeyD') shootRightPressed = false; // D key for horizontal right shooting
 });
+
+// Enhanced shooting function with power-ups
+function shoot() {
+    if (!gameRunning || gamePaused || showSplash) return;
+    
+    // Calculate gun nozzle position
+    const gunNozzleX = playerX + PLAYER_WIDTH / 2;
+    const gunNozzleY = playerY - PLAYER_HEIGHT * 0.3; // Approximate gun nozzle height
+    
+    if (hasPowerUp('MULTI_SHOT')) {
+        // Multi-shot - fire 3 bullets in spread pattern from gun nozzle
+        for (let i = 0; i < 3; i++) {
+            bullets.push({ 
+                x: gunNozzleX - BULLET_WIDTH / 2 + (i - 1) * 15, 
+                y: gunNozzleY 
+            });
+        }
+    } else {
+        // Regular shot from gun nozzle
+        bullets.push({ 
+            x: gunNozzleX - BULLET_WIDTH / 2, 
+            y: gunNozzleY 
+        });
+    }
+    
+    // Play shoot sound
+    if (shootSound) {
+        shootSound.currentTime = 0;
+        shootSound.play().catch(e => console.log('Shoot sound failed:', e));
+    }
+}
+
+function createExplosion(x, y) {
+    const explosionRadius = POWER_UPS.BLAST_POWER.explosionRadius;
+    
+    // Play blast sound
+    if (blastSound) {
+        blastSound.currentTime = 0;
+        blastSound.play().catch(e => console.log('Blast sound failed to play:', e));
+    }
+    
+    // Create explosion particles
+    for (let i = 0; i < 20; i++) {
+        const angle = (i / 20) * Math.PI * 2;
+        const speed = 2 + Math.random() * 4;
+        particles.push({
+            x: x,
+            y: y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            alpha: 1,
+            size: 4 + Math.random() * 6,
+            color: '#FF4444',
+            gravity: 0.05,
+            life: 50
+        });
+        
+        // Add some orange particles for variety
+        if (i % 2 === 0) {
+            particles.push({
+                x: x,
+                y: y,
+                vx: Math.cos(angle + 0.5) * speed * 0.7,
+                vy: Math.sin(angle + 0.5) * speed * 0.7,
+                alpha: 1,
+                size: 2 + Math.random() * 4,
+                color: '#FF8800',
+                gravity: 0.03,
+                life: 40
+            });
+        }
+    }
+    
+    // Damage all spiders in explosion radius
+    spiders.forEach((spider, index) => {
+        const distance = Math.sqrt(Math.pow(spider.x - x, 2) + Math.pow(spider.y - y, 2));
+        if (distance < explosionRadius) {
+            // Add points for explosion kills
+            const points = 25 + (currentLevel - 1) * 5;
+            score += points;
+            levelScore += points;
+            spawnParticles(spider.x, spider.y);
+            spiders.splice(index, 1);
+            spidersDefeatedThisLevel++;
+            if (breakSound) {
+                breakSound.currentTime = 0;
+                breakSound.play();
+            }
+        }
+    });
+    
+    groundSpiders.forEach((spider, index) => {
+        const distance = Math.sqrt(Math.pow(spider.x - x, 2) + Math.pow(spider.y - y, 2));
+        if (distance < explosionRadius) {
+            // Add points for explosion kills
+            const points = 35 + (currentLevel - 1) * 5;
+            score += points;
+            levelScore += points;
+            spawnParticles(spider.x, spider.y);
+            groundSpiders.splice(index, 1);
+            if (breakSound) {
+                breakSound.currentTime = 0;
+                breakSound.play();
+            }
+        }
+    });
+    
+    // Check for level progression after explosion
+    checkLevelUp();
+}
 
 // ...shooting...
 setInterval(() => {
     if (shootPressed && gameRunning && !gamePaused && !showSplash) {
-        bullets.push({ x: playerX + PLAYER_WIDTH / 2 - BULLET_WIDTH / 2, y: playerY });
-        if (shootSound) shootSound.currentTime = 0, shootSound.play();
+        // Only auto-fire if not using machine gun (machine gun handles its own timing)
+        if (!hasPowerUp('MACHINE_GUN')) {
+            shoot();
+        }
     }
 }, 200); // shooting rate
 
@@ -1632,6 +2945,10 @@ if (isMobile) {
     const rightBtn = document.getElementById('rightBtn');
     const shootBtn = document.getElementById('shootBtn');
     const pauseBtn = document.getElementById('pauseBtn');
+    const shootLeftBtn = document.getElementById('shootLeftBtn');
+    const shootRightBtn = document.getElementById('shootRightBtn');
+    const shootLeftUpBtn = document.getElementById('shootLeftUpBtn');
+    const shootLeftDownBtn = document.getElementById('shootLeftDownBtn');
     
     // Touch events for movement
     leftBtn.addEventListener('touchstart', (e) => {
@@ -1665,6 +2982,48 @@ if (isMobile) {
         shootPressed = false;
     });
     
+    // Touch events for horizontal shooting
+    shootLeftBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        shootLeftPressed = true;
+    });
+    
+    shootLeftBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        shootLeftPressed = false;
+    });
+    
+    shootRightBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        shootRightPressed = true;
+    });
+    
+    shootRightBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        shootRightPressed = false;
+    });
+    
+    // Touch events for diagonal shooting
+    shootLeftUpBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        shootLeftUpPressed = true;
+    });
+    
+    shootLeftUpBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        shootLeftUpPressed = false;
+    });
+    
+    shootLeftDownBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        shootLeftDownPressed = true;
+    });
+    
+    shootLeftDownBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        shootLeftDownPressed = false;
+    });
+    
     // Touch events for pause
     pauseBtn.addEventListener('touchstart', (e) => {
         e.preventDefault();
@@ -1674,12 +3033,30 @@ if (isMobile) {
             if (gamePaused) {
                 pauseStartTime = Date.now();
                 if (backgroundMusic && !backgroundMusic.paused) backgroundMusic.pause();
+                // Stop any existing resume sound and play pause sound
+                if (resumeSound) {
+                    resumeSound.pause();
+                    resumeSound.currentTime = 0;
+                }
+                if (pauseSound) {
+                    pauseSound.currentTime = 0;
+                    pauseSound.play().catch(e => console.log('Pause sound failed to play:', e));
+                }
             } else {
                 if (pauseStartTime > 0) {
                     totalPauseTime += Date.now() - pauseStartTime;
                     pauseStartTime = 0;
                 }
                 if (backgroundMusic && backgroundMusic.paused) backgroundMusic.play().catch(e => console.log('Music play failed'));
+                // Stop pause sound first, then play resume sound
+                if (pauseSound) {
+                    pauseSound.pause();
+                    pauseSound.currentTime = 0;
+                }
+                if (resumeSound) {
+                    resumeSound.currentTime = 0;
+                    resumeSound.play().catch(e => console.log('Resume sound failed to play:', e));
+                }
             }
         }
     });
