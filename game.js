@@ -130,20 +130,6 @@ const resumeSound = document.getElementById('resumeSound');
 const footstepSound = document.getElementById('footstepSound');
 const blastSound = document.getElementById('blastSound');
 
-// Debug sound initialization
-console.log('Sound elements loaded:');
-console.log('shootSound:', !!shootSound);
-console.log('breakSound:', !!breakSound);
-console.log('backgroundMusic:', !!backgroundMusic);
-console.log('gameOverSound:', !!gameOverSound);
-console.log('loseLifeSound:', !!loseLifeSound);
-console.log('jumpSound:', !!jumpSound);
-console.log('enterSound:', !!enterSound);
-console.log('pauseSound:', !!pauseSound);
-console.log('resumeSound:', !!resumeSound);
-console.log('footstepSound:', !!footstepSound);
-console.log('blastSound:', !!blastSound);
-
 // Set default volumes for better audio experience
 if (shootSound) shootSound.volume = 0.6;
 if (breakSound) breakSound.volume = 0.7;
@@ -770,7 +756,7 @@ function spawnFootstepParticles() {
     if (footstepSound && gameRunning && !gamePaused) {
         footstepSound.currentTime = 0;
         footstepSound.volume = 0.1; // Very quiet
-        footstepSound.play().catch(e => console.log('Footstep sound failed to play:', e));
+        footstepSound.play().catch(e => {});
     }
     
     // Create small dust particles
@@ -859,12 +845,9 @@ function collectPowerUp(type) {
     // Play collection sound with higher volume for better feedback
     const powerUpSound = document.getElementById('powerUpSound');
     if (powerUpSound) {
-        console.log('Playing power-up sound...');
         powerUpSound.currentTime = 0;
         powerUpSound.volume = 0.8; // Increased volume for better feedback
-        powerUpSound.play().catch(e => console.log('Power-up sound failed:', e));
-    } else {
-        console.log('Power-up sound element not found!');
+        powerUpSound.play().catch(e => {});
     }
     
     // Add score bonus for collecting power-up
@@ -1832,7 +1815,7 @@ function shootHorizontalBullet(direction) {
     // Play shoot sound
     if (shootSound) {
         shootSound.currentTime = 0;
-        shootSound.play().catch(e => console.log('Shoot sound failed to play:', e));
+        shootSound.play().catch(e => {});
     }
 }
 
@@ -1857,7 +1840,7 @@ function shootDiagonalBullet(directionX, directionY) {
     // Play shoot sound
     if (shootSound) {
         shootSound.currentTime = 0;
-        shootSound.play().catch(e => console.log('Shoot sound failed to play:', e));
+        shootSound.play().catch(e => {});
     }
 }
 
@@ -2198,7 +2181,6 @@ function checkCollisions() {
             bullet.y > playerY &&
             bullet.y < playerY + PLAYER_HEIGHT
         ) {
-            console.log('Spider bullet hit player!');
             loseLife();
             spiderBullets.splice(bIdx, 1);
             spawnParticles(playerX + PLAYER_WIDTH / 2, playerY + PLAYER_HEIGHT / 2);
@@ -2207,11 +2189,6 @@ function checkCollisions() {
     
     // Player vs ground spiders (lose life) - Rectangle-Circle collision detection
     groundSpiders.forEach((spider, sIdx) => {
-        console.log('Checking ground spider collision:', {
-            playerX, playerY, playerWidth: PLAYER_WIDTH, playerHeight: PLAYER_HEIGHT,
-            spiderX: spider.x, spiderY: spider.y, spiderRadius: SPIDER_RADIUS
-        });
-        
         // Find the closest point on the rectangle (player) to the center of the circle (spider)
         const closestX = Math.max(playerX, Math.min(spider.x, playerX + PLAYER_WIDTH));
         const closestY = Math.max(playerY, Math.min(spider.y, playerY + PLAYER_HEIGHT));
@@ -2223,7 +2200,6 @@ function checkCollisions() {
         
         // Check if the distance is within the spider's radius (collision)
         if (distanceSquared <= SPIDER_RADIUS * SPIDER_RADIUS) {
-            console.log('Ground spider touched player! Distance:', Math.sqrt(distanceSquared), 'Radius:', SPIDER_RADIUS);
             loseLife();
             groundSpiders.splice(sIdx, 1); // Remove the spider that caught player
         }
@@ -2231,11 +2207,6 @@ function checkCollisions() {
     
     // Player vs hanging spiders (lose life) - Rectangle-Circle collision detection
     spiders.forEach((spider, sIdx) => {
-        console.log('Checking hanging spider collision:', {
-            playerX, playerY, playerWidth: PLAYER_WIDTH, playerHeight: PLAYER_HEIGHT,
-            spiderX: spider.x, spiderY: spider.y, spiderRadius: SPIDER_RADIUS
-        });
-        
         // Find the closest point on the rectangle (player) to the center of the circle (spider)
         const closestX = Math.max(playerX, Math.min(spider.x, playerX + PLAYER_WIDTH));
         const closestY = Math.max(playerY, Math.min(spider.y, playerY + PLAYER_HEIGHT));
@@ -2247,7 +2218,6 @@ function checkCollisions() {
         
         // Check if the distance is within the spider's radius (collision)
         if (distanceSquared <= SPIDER_RADIUS * SPIDER_RADIUS) {
-            console.log('Hanging spider touched player! Distance:', Math.sqrt(distanceSquared), 'Radius:', SPIDER_RADIUS);
             loseLife();
             spiders.splice(sIdx, 1); // Remove the spider that caught player
         }
@@ -2280,7 +2250,6 @@ function checkLevelUp() {
 }
 
 function loseLife() {
-    console.log('loseLife() function called - lives before:', lives);
     lives--;
     
     // Play lose life sound effect immediately and prominently
@@ -2290,16 +2259,11 @@ function loseLife() {
             loseLifeSound.volume = 0.8; // Ensure volume is high enough
             const playPromise = loseLifeSound.play();
             if (playPromise !== undefined) {
-                playPromise.catch(e => {
-                    console.log('Lose life sound failed to play:', e);
-                });
+                playPromise.catch(e => {});
             }
-            console.log('Lose life sound should be playing now');
         } catch (error) {
-            console.log('Error playing lose life sound:', error);
+            // Error playing lose life sound
         }
-    } else {
-        console.log('Lose life sound element not found');
     }
     
     if (lives <= 0) {
@@ -2696,7 +2660,7 @@ document.addEventListener('keydown', e => {
             // Play enter sound effect
             if (enterSound) {
                 enterSound.currentTime = 0;
-                enterSound.play().catch(e => console.log('Enter sound failed to play:', e));
+                enterSound.play().catch(e => {});
             }
             
             showSplash = false;
@@ -2709,7 +2673,7 @@ document.addEventListener('keydown', e => {
             if (backgroundMusic) {
                 backgroundMusic.currentTime = 0;
                 backgroundMusic.volume = 0.3; // Lower volume for background music
-                backgroundMusic.play().catch(e => console.log('Background music autoplay prevented'));
+                backgroundMusic.play().catch(e => {});
             }
         }
         return;
@@ -2720,7 +2684,7 @@ document.addEventListener('keydown', e => {
             // Play enter sound for restart
             if (enterSound) {
                 enterSound.currentTime = 0;
-                enterSound.play().catch(e => console.log('Enter sound failed to play:', e));
+                enterSound.play().catch(e => {});
             }
             
             // Reset all game variables
@@ -2732,6 +2696,8 @@ document.addEventListener('keydown', e => {
             currentLevel = 1;
             lives = 3;
             levelScore = 0;
+            spidersDefeatedThisLevel = 0;
+            spidersSpawnedThisLevel = 0;
             spiders = [];
             groundSpiders = [];
             bullets = [];
@@ -2783,8 +2749,6 @@ document.addEventListener('keydown', e => {
                 backgroundMusic.pause();
                 backgroundMusic.currentTime = 0;
             }
-            
-            console.log('Game restarted successfully - returning to splash screen');
         }
         return;
     }
@@ -2810,14 +2774,14 @@ document.addEventListener('keydown', e => {
             }
             if (pauseSound) {
                 pauseSound.currentTime = 0;
-                pauseSound.play().catch(e => console.log('Pause sound failed to play:', e));
+                pauseSound.play().catch(e => {});
             }
         } else {
             if (pauseStartTime > 0) {
                 totalPauseTime += Date.now() - pauseStartTime;
                 pauseStartTime = 0;
             }
-            if (backgroundMusic && backgroundMusic.paused) backgroundMusic.play().catch(e => console.log('Music play failed'));
+            if (backgroundMusic && backgroundMusic.paused) backgroundMusic.play().catch(e => {});
             // Stop pause sound first, then play resume sound
             if (pauseSound) {
                 pauseSound.pause();
@@ -2825,7 +2789,7 @@ document.addEventListener('keydown', e => {
             }
             if (resumeSound) {
                 resumeSound.currentTime = 0;
-                resumeSound.play().catch(e => console.log('Resume sound failed to play:', e));
+                resumeSound.play().catch(e => {});
             }
         }
     }
@@ -2833,7 +2797,7 @@ document.addEventListener('keydown', e => {
         // Toggle music
         if (backgroundMusic) {
             if (backgroundMusic.paused) {
-                backgroundMusic.play().catch(e => console.log('Music play failed'));
+                backgroundMusic.play().catch(e => {});
             } else {
                 backgroundMusic.pause();
             }
@@ -2880,7 +2844,7 @@ function shoot() {
     // Play shoot sound
     if (shootSound) {
         shootSound.currentTime = 0;
-        shootSound.play().catch(e => console.log('Shoot sound failed:', e));
+        shootSound.play().catch(e => {});
     }
 }
 
@@ -2890,7 +2854,7 @@ function createExplosion(x, y) {
     // Play blast sound
     if (blastSound) {
         blastSound.currentTime = 0;
-        blastSound.play().catch(e => console.log('Blast sound failed to play:', e));
+        blastSound.play().catch(e => {});
     }
     
     // Create explosion particles
@@ -3074,14 +3038,14 @@ if (isMobile) {
                 }
                 if (pauseSound) {
                     pauseSound.currentTime = 0;
-                    pauseSound.play().catch(e => console.log('Pause sound failed to play:', e));
+                    pauseSound.play().catch(e => {});
                 }
             } else {
                 if (pauseStartTime > 0) {
                     totalPauseTime += Date.now() - pauseStartTime;
                     pauseStartTime = 0;
                 }
-                if (backgroundMusic && backgroundMusic.paused) backgroundMusic.play().catch(e => console.log('Music play failed'));
+                if (backgroundMusic && backgroundMusic.paused) backgroundMusic.play().catch(e => {});
                 // Stop pause sound first, then play resume sound
                 if (pauseSound) {
                     pauseSound.pause();
@@ -3089,7 +3053,7 @@ if (isMobile) {
                 }
                 if (resumeSound) {
                     resumeSound.currentTime = 0;
-                    resumeSound.play().catch(e => console.log('Resume sound failed to play:', e));
+                    resumeSound.play().catch(e => {});
                 }
             }
         }
