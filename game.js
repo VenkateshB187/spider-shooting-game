@@ -66,6 +66,15 @@ let playerY = PLAYER_Y; // Add playerY variable for jumping
 let playerVelocityY = 0; // Vertical velocity for jumping
 let isJumping = false; // Jump state
 let upPressed = false; // Up arrow key state
+
+// Death animation variables - now for blinking effect
+let isPlayerDying = false;
+let deathAnimationStartTime = 0;
+let blinkCount = 0;
+let lastBlinkTime = 0;
+const BLINK_DURATION = 150; // How long each blink lasts
+const TOTAL_BLINKS = 8; // Number of times to blink
+const DEATH_ANIMATION_DURATION = TOTAL_BLINKS * BLINK_DURATION * 2; // Total time for blinking
 const JUMP_POWER = -12; // Jump strength (negative for upward)
 const GRAVITY = 0.6; // Gravity strength
 const GROUND_Y = PLAYER_Y; // Ground level
@@ -190,7 +199,7 @@ const POWER_UPS = {
         name: 'Blast Power', 
         color: '#FF1744', 
         duration: 8000,  // 8 seconds
-        explosionRadius: 20  // 20-pixel radius as requested
+        explosionRadius: 10  // 10-pixel radius as requested
     },
     FREEZE_TIME: { 
         name: 'Freeze Time', 
@@ -540,6 +549,19 @@ function drawPlayer() {
 // Enhanced procedural character drawing function like spider animation
 function drawAnimatedPlayerFallback() {
     const time = playerAnimationTime;
+    
+    // Death blinking effect handling
+    if (isPlayerDying) {
+        const elapsedTime = Date.now() - deathAnimationStartTime;
+        const blinkPhase = Math.floor(elapsedTime / BLINK_DURATION) % 2;
+        
+        // Don't draw player during blink-off phases
+        if (blinkPhase === 1) {
+            return; // Skip drawing to create blink effect
+        }
+        
+        // Continue with normal player drawing during blink-on phases
+    }
     
     // Calculate animation cycles
     const runCycle = (time % ANIMATION_SETTINGS.runCycleDuration) / ANIMATION_SETTINGS.runCycleDuration;
@@ -989,79 +1011,27 @@ function drawPowerUpUI() {
 
 // ...draw bullets...
 function drawBullets() {
+    // All bullets use the same white color and rectangular shape
+    ctx.fillStyle = '#ffffff';
+    
     // Player vertical bullets
-    ctx.fillStyle = '#ff0';
     bullets.forEach(bullet => {
-        // Draw bullet as an upward-pointing triangle
-        ctx.beginPath();
-        ctx.moveTo(bullet.x + BULLET_WIDTH / 2, bullet.y); // top point
-        ctx.lineTo(bullet.x, bullet.y + BULLET_HEIGHT); // bottom left
-        ctx.lineTo(bullet.x + BULLET_WIDTH, bullet.y + BULLET_HEIGHT); // bottom right
-        ctx.closePath();
-        ctx.fill();
+        ctx.fillRect(bullet.x, bullet.y, BULLET_WIDTH, BULLET_HEIGHT);
     });
     
     // Player horizontal bullets
-    ctx.fillStyle = '#0ff'; // Cyan color for horizontal bullets
     horizontalBullets.forEach(bullet => {
-        // Draw horizontal bullet as diamond shape
-        ctx.beginPath();
-        if (bullet.direction > 0) {
-            // Right-pointing diamond
-            ctx.moveTo(bullet.x + HORIZONTAL_BULLET_WIDTH, bullet.y + HORIZONTAL_BULLET_HEIGHT / 2); // right point
-            ctx.lineTo(bullet.x + HORIZONTAL_BULLET_WIDTH / 2, bullet.y); // top
-            ctx.lineTo(bullet.x, bullet.y + HORIZONTAL_BULLET_HEIGHT / 2); // left point
-            ctx.lineTo(bullet.x + HORIZONTAL_BULLET_WIDTH / 2, bullet.y + HORIZONTAL_BULLET_HEIGHT); // bottom
-        } else {
-            // Left-pointing diamond
-            ctx.moveTo(bullet.x, bullet.y + HORIZONTAL_BULLET_HEIGHT / 2); // left point
-            ctx.lineTo(bullet.x + HORIZONTAL_BULLET_WIDTH / 2, bullet.y); // top
-            ctx.lineTo(bullet.x + HORIZONTAL_BULLET_WIDTH, bullet.y + HORIZONTAL_BULLET_HEIGHT / 2); // right point
-            ctx.lineTo(bullet.x + HORIZONTAL_BULLET_WIDTH / 2, bullet.y + HORIZONTAL_BULLET_HEIGHT); // bottom
-        }
-        ctx.closePath();
-        ctx.fill();
+        ctx.fillRect(bullet.x, bullet.y, HORIZONTAL_BULLET_WIDTH, HORIZONTAL_BULLET_HEIGHT);
     });
     
     // Player diagonal bullets
-    ctx.fillStyle = '#f0f'; // Magenta color for diagonal bullets
     diagonalBullets.forEach(bullet => {
-        // Draw diagonal bullet as star shape
-        ctx.save();
-        ctx.translate(bullet.x + HORIZONTAL_BULLET_WIDTH / 2, bullet.y + HORIZONTAL_BULLET_HEIGHT / 2);
-        
-        // Calculate rotation based on direction
-        let rotation = 0;
-        if (bullet.directionX < 0 && bullet.directionY < 0) rotation = -Math.PI/4; // left-up
-        if (bullet.directionX < 0 && bullet.directionY > 0) rotation = Math.PI/4; // left-down
-        
-        ctx.rotate(rotation);
-        
-        ctx.beginPath();
-        ctx.moveTo(0, -4); // top
-        ctx.lineTo(2, -1); // top-right
-        ctx.lineTo(4, 0); // right
-        ctx.lineTo(2, 1); // bottom-right
-        ctx.lineTo(0, 4); // bottom
-        ctx.lineTo(-2, 1); // bottom-left
-        ctx.lineTo(-4, 0); // left
-        ctx.lineTo(-2, -1); // top-left
-        ctx.closePath();
-        ctx.fill();
-        
-        ctx.restore();
+        ctx.fillRect(bullet.x, bullet.y, HORIZONTAL_BULLET_WIDTH, HORIZONTAL_BULLET_HEIGHT);
     });
     
     // Spider bullets
-    ctx.fillStyle = '#f00';
     spiderBullets.forEach(bullet => {
-        // Draw spider bullet as downward-pointing triangle
-        ctx.beginPath();
-        ctx.moveTo(bullet.x + SPIDER_BULLET_WIDTH / 2, bullet.y + SPIDER_BULLET_HEIGHT); // bottom point
-        ctx.lineTo(bullet.x, bullet.y); // top left
-        ctx.lineTo(bullet.x + SPIDER_BULLET_WIDTH, bullet.y); // top right
-        ctx.closePath();
-        ctx.fill();
+        ctx.fillRect(bullet.x, bullet.y, SPIDER_BULLET_WIDTH, SPIDER_BULLET_HEIGHT);
     });
 }
 
@@ -1437,6 +1407,20 @@ function drawInfoBar() {
 // ...move player...
 function movePlayer() {
     if (gamePaused) return; // Stop all player movement when paused
+    
+    // Handle death blinking effect
+    if (isPlayerDying) {
+        const elapsedTime = Date.now() - deathAnimationStartTime;
+        
+        // Update blink timing
+        if (elapsedTime - lastBlinkTime > BLINK_DURATION) {
+            blinkCount++;
+            lastBlinkTime = elapsedTime;
+        }
+        
+        // Player stays in place during blinking (no movement)
+        return; // Don't process normal movement during death
+    }
     
     if (leftPressed) playerX -= PLAYER_SPEED;
     if (rightPressed) playerX += PLAYER_SPEED;
@@ -1988,6 +1972,12 @@ function spawnParticles(x, y) {
 
 // ...collision detection...
 function checkCollisions() {
+    // Don't check player collisions during death animation
+    if (isPlayerDying) {
+        // Still check bullet vs spider collisions, but skip player collision checks
+        // Only process bullet-spider collisions, skip player damage sections
+    }
+    
     // Vertical bullet vs hanging spiders
     bullets.forEach((bullet, bIdx) => {
         spiders.forEach((spider, sIdx) => {
@@ -2012,7 +2002,13 @@ function checkCollisions() {
                 
                 spiders.splice(sIdx, 1);
                 bullets.splice(bIdx, 1);
-                spidersDefeatedThisLevel++;
+                
+                // Only increment if we haven't reached the level requirement yet
+                const maxSpiders = spidersPerLevel[Math.min(currentLevel - 1, spidersPerLevel.length - 1)];
+                if (spidersDefeatedThisLevel < maxSpiders) {
+                    spidersDefeatedThisLevel++;
+                }
+                
                 if (breakSound) breakSound.currentTime = 0, breakSound.play();
                 // Check level progression
                 checkLevelUp();
@@ -2042,6 +2038,13 @@ function checkCollisions() {
                 
                 groundSpiders.splice(sIdx, 1);
                 bullets.splice(bIdx, 1);
+                
+                // Only increment if we haven't reached the level requirement yet
+                const maxSpiders = spidersPerLevel[Math.min(currentLevel - 1, spidersPerLevel.length - 1)];
+                if (spidersDefeatedThisLevel < maxSpiders) {
+                    spidersDefeatedThisLevel++;
+                }
+                
                 if (breakSound) breakSound.currentTime = 0, breakSound.play();
                 
                 // Check level progression
@@ -2074,6 +2077,13 @@ function checkCollisions() {
                 
                 groundSpiders.splice(sIdx, 1);
                 horizontalBullets.splice(bIdx, 1);
+                
+                // Only increment if we haven't reached the level requirement yet
+                const maxSpiders = spidersPerLevel[Math.min(currentLevel - 1, spidersPerLevel.length - 1)];
+                if (spidersDefeatedThisLevel < maxSpiders) {
+                    spidersDefeatedThisLevel++;
+                }
+                
                 if (breakSound) breakSound.currentTime = 0, breakSound.play();
                 
                 // Check level progression
@@ -2104,6 +2114,13 @@ function checkCollisions() {
                 
                 spiders.splice(sIdx, 1);
                 horizontalBullets.splice(bIdx, 1);
+                
+                // Only increment if we haven't reached the level requirement yet
+                const maxSpiders = spidersPerLevel[Math.min(currentLevel - 1, spidersPerLevel.length - 1)];
+                if (spidersDefeatedThisLevel < maxSpiders) {
+                    spidersDefeatedThisLevel++;
+                }
+                
                 if (breakSound) breakSound.currentTime = 0, breakSound.play();
                 
                 // Check level progression
@@ -2136,6 +2153,13 @@ function checkCollisions() {
                 
                 spiders.splice(sIdx, 1);
                 diagonalBullets.splice(bIdx, 1);
+                
+                // Only increment if we haven't reached the level requirement yet
+                const maxSpiders = spidersPerLevel[Math.min(currentLevel - 1, spidersPerLevel.length - 1)];
+                if (spidersDefeatedThisLevel < maxSpiders) {
+                    spidersDefeatedThisLevel++;
+                }
+                
                 if (breakSound) breakSound.currentTime = 0, breakSound.play();
                 
                 // Check level progression
@@ -2165,6 +2189,13 @@ function checkCollisions() {
                 
                 groundSpiders.splice(sIdx, 1);
                 diagonalBullets.splice(bIdx, 1);
+                
+                // Only increment if we haven't reached the level requirement yet
+                const maxSpiders = spidersPerLevel[Math.min(currentLevel - 1, spidersPerLevel.length - 1)];
+                if (spidersDefeatedThisLevel < maxSpiders) {
+                    spidersDefeatedThisLevel++;
+                }
+                
                 if (breakSound) breakSound.currentTime = 0, breakSound.play();
                 
                 // Check level progression
@@ -2174,54 +2205,60 @@ function checkCollisions() {
     });
     
     // Spider bullets vs player
-    spiderBullets.forEach((bullet, bIdx) => {
-        if (
-            bullet.x > playerX &&
-            bullet.x < playerX + PLAYER_WIDTH &&
-            bullet.y > playerY &&
-            bullet.y < playerY + PLAYER_HEIGHT
-        ) {
-            loseLife();
-            spiderBullets.splice(bIdx, 1);
-            spawnParticles(playerX + PLAYER_WIDTH / 2, playerY + PLAYER_HEIGHT / 2);
-        }
-    });
+    if (!isPlayerDying) { // Only check player collisions if not dying
+        spiderBullets.forEach((bullet, bIdx) => {
+            if (
+                bullet.x > playerX &&
+                bullet.x < playerX + PLAYER_WIDTH &&
+                bullet.y > playerY &&
+                bullet.y < playerY + PLAYER_HEIGHT
+            ) {
+                loseLife();
+                spiderBullets.splice(bIdx, 1);
+                spawnParticles(playerX + PLAYER_WIDTH / 2, playerY + PLAYER_HEIGHT / 2);
+            }
+        });
+    }
     
     // Player vs ground spiders (lose life) - Rectangle-Circle collision detection
-    groundSpiders.forEach((spider, sIdx) => {
-        // Find the closest point on the rectangle (player) to the center of the circle (spider)
-        const closestX = Math.max(playerX, Math.min(spider.x, playerX + PLAYER_WIDTH));
-        const closestY = Math.max(playerY, Math.min(spider.y, playerY + PLAYER_HEIGHT));
-        
-        // Calculate the distance between the circle's center and this closest point
-        const dx = spider.x - closestX;
-        const dy = spider.y - closestY;
-        const distanceSquared = dx * dx + dy * dy;
-        
-        // Check if the distance is within the spider's radius (collision)
-        if (distanceSquared <= SPIDER_RADIUS * SPIDER_RADIUS) {
-            loseLife();
-            groundSpiders.splice(sIdx, 1); // Remove the spider that caught player
-        }
-    });
+    if (!isPlayerDying) { // Only check player collisions if not dying
+        groundSpiders.forEach((spider, sIdx) => {
+            // Find the closest point on the rectangle (player) to the center of the circle (spider)
+            const closestX = Math.max(playerX, Math.min(spider.x, playerX + PLAYER_WIDTH));
+            const closestY = Math.max(playerY, Math.min(spider.y, playerY + PLAYER_HEIGHT));
+            
+            // Calculate the distance between the circle's center and this closest point
+            const dx = spider.x - closestX;
+            const dy = spider.y - closestY;
+            const distanceSquared = dx * dx + dy * dy;
+            
+            // Check if the distance is within the spider's radius (collision)
+            if (distanceSquared <= SPIDER_RADIUS * SPIDER_RADIUS) {
+                loseLife();
+                groundSpiders.splice(sIdx, 1); // Remove the spider that caught player
+            }
+        });
+    }
     
     // Player vs hanging spiders (lose life) - Rectangle-Circle collision detection
-    spiders.forEach((spider, sIdx) => {
-        // Find the closest point on the rectangle (player) to the center of the circle (spider)
-        const closestX = Math.max(playerX, Math.min(spider.x, playerX + PLAYER_WIDTH));
-        const closestY = Math.max(playerY, Math.min(spider.y, playerY + PLAYER_HEIGHT));
-        
-        // Calculate the distance between the circle's center and this closest point
-        const dx = spider.x - closestX;
-        const dy = spider.y - closestY;
-        const distanceSquared = dx * dx + dy * dy;
-        
-        // Check if the distance is within the spider's radius (collision)
-        if (distanceSquared <= SPIDER_RADIUS * SPIDER_RADIUS) {
-            loseLife();
-            spiders.splice(sIdx, 1); // Remove the spider that caught player
-        }
-    });
+    if (!isPlayerDying) { // Only check player collisions if not dying
+        spiders.forEach((spider, sIdx) => {
+            // Find the closest point on the rectangle (player) to the center of the circle (spider)
+            const closestX = Math.max(playerX, Math.min(spider.x, playerX + PLAYER_WIDTH));
+            const closestY = Math.max(playerY, Math.min(spider.y, playerY + PLAYER_HEIGHT));
+            
+            // Calculate the distance between the circle's center and this closest point
+            const dx = spider.x - closestX;
+            const dy = spider.y - closestY;
+            const distanceSquared = dx * dx + dy * dy;
+            
+            // Check if the distance is within the spider's radius (collision)
+            if (distanceSquared <= SPIDER_RADIUS * SPIDER_RADIUS) {
+                loseLife();
+                spiders.splice(sIdx, 1); // Remove the spider that caught player
+            }
+        });
+    }
 }
 
 // ...level and life management...
@@ -2252,6 +2289,11 @@ function checkLevelUp() {
 function loseLife() {
     lives--;
     
+    // Start death blinking
+    isPlayerDying = true;
+    deathAnimationStartTime = Date.now();
+    blinkCount = 0;
+    
     // Play lose life sound effect immediately and prominently
     if (loseLifeSound) {
         try {
@@ -2267,20 +2309,28 @@ function loseLife() {
     }
     
     if (lives <= 0) {
-        gameOver = true;
-        gameRunning = false;
-        if (backgroundMusic) backgroundMusic.pause();
-        if (gameOverSound) gameOverSound.currentTime = 0, gameOverSound.play();
+        // Don't immediately end game - let death blinking play
+        setTimeout(() => {
+            gameOver = true;
+            gameRunning = false;
+            if (backgroundMusic) backgroundMusic.pause();
+            if (gameOverSound) gameOverSound.currentTime = 0, gameOverSound.play();
+        }, BLINK_DURATION * TOTAL_BLINKS);
     } else {
-        // Reset player position and clear threats
-        playerX = canvas.width / 2 - PLAYER_WIDTH / 2;
-        playerY = GROUND_Y; // Reset to ground position
-        playerVelocityY = 0; // Reset jump velocity
-        isJumping = false; // Reset jump state
-        groundSpiders = [];
-        spiderBullets = []; // Clear spider bullets on respawn
-        horizontalBullets = []; // Clear horizontal bullets on respawn
-        // Brief invincibility could be added here
+        // Reset after death blinking completes
+        setTimeout(() => {
+            // Reset player position and clear threats
+            playerX = canvas.width / 2 - PLAYER_WIDTH / 2;
+            playerY = GROUND_Y; // Reset to ground position
+            playerVelocityY = 0; // Reset jump velocity
+            isJumping = false; // Reset jump state
+            isPlayerDying = false; // End death blinking
+            blinkCount = 0; // Reset blink count
+            groundSpiders = [];
+            spiderBullets = []; // Clear spider bullets on respawn
+            horizontalBullets = []; // Clear horizontal bullets on respawn
+            // Brief invincibility could be added here
+        }, BLINK_DURATION * TOTAL_BLINKS);
     }
 }
 
@@ -2725,6 +2775,11 @@ document.addEventListener('keydown', e => {
             playerVelocityY = 0;
             isJumping = false;
             
+            // Reset death blinking variables
+            isPlayerDying = false;
+            deathAnimationStartTime = 0;
+            blinkCount = 0;
+            
             // Reset input states
             leftPressed = false;
             rightPressed = false;
@@ -2899,7 +2954,13 @@ function createExplosion(x, y) {
             levelScore += points;
             spawnParticles(spider.x, spider.y);
             spiders.splice(index, 1);
-            spidersDefeatedThisLevel++;
+            
+            // Only increment if we haven't reached the level requirement yet
+            const maxSpiders = spidersPerLevel[Math.min(currentLevel - 1, spidersPerLevel.length - 1)];
+            if (spidersDefeatedThisLevel < maxSpiders) {
+                spidersDefeatedThisLevel++;
+            }
+            
             if (breakSound) {
                 breakSound.currentTime = 0;
                 breakSound.play();
